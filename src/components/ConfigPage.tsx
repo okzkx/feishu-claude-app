@@ -1,4 +1,4 @@
-import { Form, Input, Button, Card, InputNumber, message, Space, Modal, List, Spin, Switch, Radio, Divider, Tag } from "antd";
+import { Form, Input, Button, Card, InputNumber, message, Space, Modal, List, Spin, Switch, Divider, Tag } from "antd";
 import { SettingOutlined, ArrowLeftOutlined, SearchOutlined, CopyOutlined, ApiOutlined, CheckCircleOutlined, CloseCircleOutlined, LoadingOutlined } from "@ant-design/icons";
 import { invoke } from "@tauri-apps/api/core";
 import { useState, useEffect } from "react";
@@ -25,7 +25,6 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
   const [mcpTesting, setMcpTesting] = useState(false);
   const [mcpConnectionStatus, setMcpConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
 
-  // 加载已保存的配置到表单
   useEffect(() => {
     if (initialConfig) {
       form.setFieldsValue(initialConfig);
@@ -50,7 +49,6 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
       return;
     }
 
-    // 保存当前表单数据到 localStorage
     const currentConfig: AppConfig = {
       feishuAppId: values.feishuAppId,
       feishuAppSecret: values.feishuAppSecret,
@@ -59,15 +57,10 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
       claudeProjectDir: values.claudeProjectDir || ".",
       cmdPrefix: values.cmdPrefix || "claude:",
       pollInterval: values.pollInterval || 5,
-      mcp: values.mcp || {
-        enabled: false,
-        transport: 'http',
-        httpUrl: 'http://localhost:8081',
-      },
+      mcp: values.mcp || { enabled: false },
     };
     localStorage.setItem("feishu-claude-config", JSON.stringify(currentConfig));
 
-    // 临时初始化 API 以获取群聊列表
     feishuApi.init(currentConfig);
 
     setChatListLoading(true);
@@ -75,17 +68,13 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
     setChatModalVisible(true);
 
     try {
-      console.log("开始获取群聊列表...");
       const chats = await feishuApi.getChatList();
-      console.log("获取到的群聊列表:", chats);
       setChatList(chats);
       if (chats.length === 0) {
         message.info("未找到群聊，请确保机器人已加入群聊");
       }
     } catch (error) {
-      console.error("获取群聊列表失败:", error);
       message.error(`获取群聊列表失败: ${error}`);
-      // 不关闭 Modal，让用户看到错误
     } finally {
       setChatListLoading(false);
     }
@@ -105,7 +94,6 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
   const handleTestMcpConnection = async () => {
     const values = form.getFieldsValue();
     const mcpEnabled = values.mcp?.enabled ?? false;
-    const httpUrl = values.mcp?.httpUrl ?? "http://localhost:8081";
 
     if (!mcpEnabled) {
       message.warning("请先启用 MCP");
@@ -116,12 +104,10 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
     setMcpConnectionStatus('connecting');
 
     try {
-      // 调用后端 mcp_connect 命令（待实现）
-      await invoke('mcp_connect', { url: httpUrl });
+      await invoke('mcp_connect');
       message.success("MCP 连接测试成功");
       setMcpConnectionStatus('connected');
     } catch (error) {
-      console.error("MCP 连接测试失败:", error);
       message.error(`MCP 连接测试失败: ${error}`);
       setMcpConnectionStatus('error');
     } finally {
@@ -160,11 +146,7 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
             cmdPrefix: "claude:",
             pollInterval: 5,
             claudeProjectDir: ".",
-            mcp: {
-              enabled: false,
-              transport: 'http',
-              httpUrl: 'http://localhost:8081',
-            },
+            mcp: { enabled: false },
           }}
         >
           <Form.Item
@@ -234,13 +216,14 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
           </Form.Item>
 
           <Divider orientation="left">
-            <ApiOutlined /> MCP 设置
+            <ApiOutlined /> MCP 设置 (STDIO 模式)
           </Divider>
 
           <Form.Item
             name={['mcp', 'enabled']}
             label="启用 MCP"
             valuePropName="checked"
+            extra="启用后将通过 STDIO 与 Claude CLI 通信"
           >
             <Switch />
           </Form.Item>
@@ -249,45 +232,19 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
             {({ getFieldValue }) => {
               const mcpEnabled = getFieldValue(['mcp', 'enabled']);
               return mcpEnabled ? (
-                <>
-                  <Form.Item
-                    name={['mcp', 'transport']}
-                    label="传输方式"
-                  >
-                    <Radio.Group>
-                      <Radio.Button value="http">HTTP</Radio.Button>
-                      <Radio.Button value="stdio">STDIO</Radio.Button>
-                    </Radio.Group>
-                  </Form.Item>
-
-                  <Form.Item noStyle shouldUpdate={(prev, curr) => prev.mcp?.transport !== curr.mcp?.transport}>
-                    {({ getFieldValue }) => {
-                      const transport = getFieldValue(['mcp', 'transport']);
-                      return transport === 'http' ? (
-                        <Form.Item
-                          name={['mcp', 'httpUrl']}
-                          label="服务器地址"
-                          rules={[{ required: true, message: "请输入服务器地址" }]}
-                          extra={
-                            <Space>
-                              <Button
-                                type="primary"
-                                size="small"
-                                loading={mcpTesting}
-                                onClick={handleTestMcpConnection}
-                              >
-                                测试连接
-                              </Button>
-                              {renderMcpConnectionStatus()}
-                            </Space>
-                          }
-                        >
-                          <Input placeholder="http://localhost:8081" />
-                        </Form.Item>
-                      ) : null;
-                    }}
-                  </Form.Item>
-                </>
+                <Form.Item label="连接状态">
+                  <Space>
+                    <Button
+                      type="primary"
+                      size="small"
+                      loading={mcpTesting}
+                      onClick={handleTestMcpConnection}
+                    >
+                      测试连接
+                    </Button>
+                    {renderMcpConnectionStatus()}
+                  </Space>
+                </Form.Item>
               ) : null;
             }}
           </Form.Item>
@@ -307,7 +264,6 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
         </Form>
       </Card>
 
-      {/* 群聊列表弹窗 */}
       <Modal
         title="选择群聊"
         open={chatModalVisible}

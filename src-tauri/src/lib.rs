@@ -73,7 +73,6 @@ pub struct AppState {
     pub is_running: AtomicBool,
     pub processed_ids: Mutex<HashSet<String>>,
     pub mcp_client: Arc<McpClientManager>,
-    pub mcp_last_notified: Arc<AtomicBool>,
 }
 
 impl Default for AppState {
@@ -83,7 +82,6 @@ impl Default for AppState {
             is_running: AtomicBool::new(false),
             processed_ids: Mutex::new(HashSet::new()),
             mcp_client: Arc::new(McpClientManager::default()),
-            mcp_last_notified: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -98,14 +96,12 @@ fn get_config(state: tauri::State<'_, AppState>) -> Result<AppConfig, String> {
 // 保存配置
 #[tauri::command]
 async fn save_config(state: tauri::State<'_, AppState>, config: AppConfig) -> Result<(), String> {
-    // 先保存配置，确保锁在 await 之前释放
     let mcp_config = config.mcp.clone();
     {
         let mut current = state.config.lock().map_err(|e| e.to_string())?;
         *current = config;
-    } // 作用域结束，锁自动释放
+    }
 
-    // 更新 MCP 客户端配置
     state.mcp_client.update_config(mcp_config).await;
 
     Ok(())
@@ -128,8 +124,6 @@ async fn start_polling(
     }
 
     state.is_running.store(true, Ordering::SeqCst);
-
-    // 发送启动事件
     app.emit("polling-status", "started").ok();
 
     let poll_interval = {
@@ -138,55 +132,10 @@ async fn start_polling(
     };
 
     let mut ticker = interval(Duration::from_secs(poll_interval));
-    let mut status_check_ticker = interval(Duration::from_secs(10)); // 每10秒检查一次MCP状态
-
-    // MCP 断开通知防抖（避免重复通知）
-    let mcp_client = state.mcp_client.clone();
-    let mcp_last_notified = state.mcp_last_notified.clone();
 
     while state.is_running.load(Ordering::SeqCst) {
-        tokio::select! {
-            _ = ticker.tick() => {
-                // 发送轮询事件，前端负责实际调用飞书 API
-                app.emit("poll-tick", ()).ok();
-            }
-            _ = status_check_ticker.tick() => {
-                // 定期检查 MCP 连接状态
-                let current_status = mcp_client.connection_info().await.status;
-                let is_connected = current_status == ConnectionStatus::Connected;
-                let is_error = current_status == ConnectionStatus::Error;
-                let is_disconnected = current_status == ConnectionStatus::Disconnected;
-
-                // 检查 MCP 是否启用
-                let mcp_enabled = {
-                    let config = state.config.lock().map_err(|e| e.to_string())?;
-                    config.mcp.enabled
-                };
-
-                if mcp_enabled {
-                    if !is_connected && !mcp_last_notified.load(Ordering::SeqCst) {
-                        // MCP 断开，发送通知
-                        mcp_last_notified.store(true, Ordering::SeqCst);
-                        app.emit("mcp-status", "disconnected").ok();
-                    }
-
-                    // 检查是否需要自动重连（只在错误或断开状态下尝试）
-                    if (is_error || is_disconnected) && mcp_enabled {
-                        // 尝试重连
-                        match mcp_client.connect().await {
-                            Ok(_) => {
-                                mcp_last_notified.store(false, Ordering::SeqCst);
-                                app.emit("mcp-status", "connected").ok();
-                                app.emit("mcp-reconnected", ()).ok();
-                            }
-                            Err(_) => {
-                                // 重连失败，保持当前状态
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        ticker.tick().await;
+        app.emit("poll-tick", ()).ok();
     }
 
     app.emit("polling-status", "stopped").ok();
@@ -213,7 +162,6 @@ fn mark_message_processed(state: tauri::State<'_, AppState>, message_id: String)
     let mut ids = state.processed_ids.lock().unwrap();
     ids.insert(message_id);
 
-    // 清理缓存，避免内存过大
     if ids.len() > 100 {
         let to_remove: Vec<String> = ids.iter().take(50).cloned().collect();
         for id in to_remove {
@@ -229,7 +177,7 @@ async fn mcp_status(state: tauri::State<'_, AppState>) -> Result<McpConnectionIn
     Ok(info)
 }
 
-// 连接到 MCP 服务器
+// 连接 MCP（启动 Claude 子进程）
 #[tauri::command]
 async fn mcp_connect(
     app: AppHandle,
@@ -249,7 +197,7 @@ async fn mcp_connect(
     }
 }
 
-// 断开 MCP 连接
+// 断开 MCP（停止 Claude 子进程）
 #[tauri::command]
 async fn mcp_disconnect(
     app: AppHandle,
@@ -260,135 +208,68 @@ async fn mcp_disconnect(
     Ok(())
 }
 
-// 对话消息（用于多轮对话上下文）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatMessage {
-    pub role: String,
-    pub content: String,
-}
-
 // 执行 Claude 命令
 #[tauri::command]
 async fn execute_claude(
     app: AppHandle,
     state: tauri::State<'_, AppState>,
     command: String,
-    context: Option<Vec<ChatMessage>>,
 ) -> Result<TaskResult, String> {
     app.emit("claude-status", "executing").ok();
 
-    // 首先尝试使用 MCP 客户端
+    // 检查 MCP 是否已连接
     let connection_info = state.mcp_client.connection_info().await;
-    let is_connected = connection_info.status == mcp::ConnectionStatus::Connected;
+    let is_connected = connection_info.status == ConnectionStatus::Connected;
 
-    if is_connected {
-        // 构建带上下文的请求
-        let request_content = if let Some(ctx) = context {
-            // 如果有上下文，构建包含历史的请求
-            let mut history = String::new();
-            for msg in ctx {
-                history.push_str(&format!("{}: {}\n", msg.role, msg.content));
+    // 获取 MCP 是否启用
+    let mcp_enabled = {
+        let config = state.config.lock().map_err(|e| e.to_string())?;
+        config.mcp.enabled
+    };
+
+    // 如果 MCP 启用但未连接，尝试自动连接
+    if mcp_enabled && !is_connected {
+        app.emit("mcp-status", "connecting").ok();
+        match state.mcp_client.connect().await {
+            Ok(_) => {
+                app.emit("mcp-status", "connected").ok();
             }
-            history.push_str(&format!("user: {}", command));
-            history
-        } else {
-            // 没有上下文，直接使用命令
-            command
-        };
-
-        match state.mcp_client.send_message(&request_content).await {
-            Ok(response) => {
+            Err(e) => {
+                app.emit("mcp-status", "error").ok();
                 let result = TaskResult {
-                    success: true,
-                    output: response,
+                    success: false,
+                    output: format!("MCP 连接失败: {}", e),
                     timestamp: chrono::Utc::now().timestamp(),
                 };
                 app.emit("claude-status", "completed").ok();
-                app.emit("claude-result", &result).ok();
                 return Ok(result);
-            }
-            Err(e) => {
-                // MCP 调用失败，记录但继续尝试 CLI
-                eprintln!("MCP call failed: {}, falling back to CLI", e);
             }
         }
     }
 
-    // MCP 不可用，返回服务不可用
-    let result = TaskResult {
-        success: false,
-        output: "服务不可用：MCP 连接未建立或已断开".to_string(),
-        timestamp: chrono::Utc::now().timestamp(),
-    };
-
-    app.emit("claude-status", "completed").ok();
-    app.emit("claude-result", &result).ok();
-
-    Ok(result)
-}
-
-// 调用工具（完整工具调用能力）
-#[tauri::command]
-async fn call_tool(
-    app: AppHandle,
-    state: tauri::State<'_, AppState>,
-    tool_name: String,
-    arguments: serde_json::Value,
-) -> Result<TaskResult, String> {
-    app.emit("tool-status", "calling").ok();
-
-    let connection_info = state.mcp_client.connection_info().await;
-    let is_connected = connection_info.status == mcp::ConnectionStatus::Connected;
-
-    if !is_connected {
-        let result = TaskResult {
-            success: false,
-            output: "MCP 未连接，无法调用工具".to_string(),
-            timestamp: chrono::Utc::now().timestamp(),
-        };
-        app.emit("tool-status", "failed").ok();
-        app.emit("tool-result", &result).ok();
-        return Ok(result);
-    }
-
-    match state.mcp_client.call_tool(&tool_name, arguments).await {
-        Ok(result) => {
-            let task_result = TaskResult {
+    // 通过 MCP 发送消息
+    match state.mcp_client.send_message(&command).await {
+        Ok(response) => {
+            let result = TaskResult {
                 success: true,
-                output: serde_json::to_string_pretty(&result).unwrap_or_else(|_| "Invalid result".to_string()),
+                output: response,
                 timestamp: chrono::Utc::now().timestamp(),
             };
-            app.emit("tool-status", "completed").ok();
-            app.emit("tool-result", &task_result).ok();
-            Ok(task_result)
+            app.emit("claude-status", "completed").ok();
+            app.emit("claude-result", &result).ok();
+            Ok(result)
         }
         Err(e) => {
             let result = TaskResult {
                 success: false,
-                output: format!("工具调用失败: {}", e),
+                output: format!("执行失败: {}", e),
                 timestamp: chrono::Utc::now().timestamp(),
             };
-            app.emit("tool-status", "failed").ok();
-            app.emit("tool-result", &result).ok();
+            app.emit("claude-status", "completed").ok();
+            app.emit("claude-result", &result).ok();
             Ok(result)
         }
     }
-}
-
-// 列出可用工具
-#[tauri::command]
-async fn list_tools(
-    _app: AppHandle,
-    state: tauri::State<'_, AppState>,
-) -> Result<Vec<mcp::Tool>, String> {
-    let connection_info = state.mcp_client.connection_info().await;
-    let is_connected = connection_info.status == mcp::ConnectionStatus::Connected;
-
-    if !is_connected {
-        return Err("MCP 未连接".to_string());
-    }
-
-    state.mcp_client.list_tools().await.map_err(|e| e.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -410,8 +291,6 @@ pub fn run() {
             mcp_status,
             mcp_connect,
             mcp_disconnect,
-            call_tool,
-            list_tools,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

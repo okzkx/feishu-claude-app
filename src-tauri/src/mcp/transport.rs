@@ -1,80 +1,199 @@
-use super::types::{JsonRpcRequest, JsonRpcResponse, McpError};
-use reqwest::Client;
-use std::time::Duration;
+use super::types::McpError;
+use std::process::Stdio;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+use tokio::process::{Child, Command};
 
-/// HTTP 传输层
-pub struct HttpTransport {
-    client: Client,
-    base_url: String,
+/// STDIO 传输层（每次调用模式）
+pub struct StdioTransport {
+    _process: Option<Child>,
 }
 
-impl HttpTransport {
-    pub fn new(base_url: String) -> Self {
-        Self {
-            client: Client::builder()
-                .timeout(Duration::from_secs(30))
-                .build()
-                .unwrap_or_default(),
-            base_url,
+impl StdioTransport {
+    /// 创建新的传输层
+    pub fn new() -> Self {
+        Self { _process: None }
+    }
+
+    /// 获取 claude 命令路径
+    fn get_claude_path() -> &'static str {
+        // Windows 上的 npm 全局路径
+        #[cfg(target_os = "windows")]
+        {
+            // 尝试从环境变量获取，或使用默认路径
+            option_env!("CLAUDE_PATH").unwrap_or("claude")
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            "claude"
         }
     }
 
-    /// 发送 JSON-RPC 请求
-    pub async fn send_request(&self, request: &JsonRpcRequest) -> Result<JsonRpcResponse, McpError> {
-        let url = format!("{}/message", self.base_url);
+    /// 测试 claude 命令是否可用
+    pub async fn test_connection(&mut self) -> Result<(), McpError> {
+        println!("[MCP DEBUG] Testing connection with 'claude --version'");
 
-        let response = self
-            .client
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .json(request)
-            .send()
-            .await
-            .map_err(|e| McpError::ConnectionFailed(e.to_string()))?;
+        // 在 Windows 上使用 cmd.exe 来执行 claude（npm 安装的命令需要 .cmd 扩展名）
+        // 清除 CLAUDECODE 环境变量以避免嵌套会话检测
+        #[cfg(target_os = "windows")]
+        let mut child = Command::new("cmd")
+            .args(["/C", "claude", "--version"])
+            .env("CLAUDECODE", "")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| {
+                println!("[MCP DEBUG] Failed to spawn claude: {}", e);
+                McpError::ConnectionFailed(format!("Failed to spawn claude: {}", e))
+            })?;
 
-        if !response.status().is_success() {
-            return Err(McpError::RequestFailed(format!(
-                "HTTP {}",
-                response.status()
-            )));
+        #[cfg(not(target_os = "windows"))]
+        let mut child = Command::new("claude")
+            .arg("--version")
+            .env("CLAUDECODE", "")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| {
+                println!("[MCP DEBUG] Failed to spawn claude: {}", e);
+                McpError::ConnectionFailed(format!("Failed to spawn claude: {}", e))
+            })?;
+
+        println!("[MCP DEBUG] Process spawned, waiting for result...");
+
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        // 读取输出
+        let mut stdout_content = String::new();
+        let mut stderr_content = String::new();
+
+        if let Some(mut stdout) = stdout {
+            let mut reader = BufReader::new(stdout);
+            let _ = reader.read_to_string(&mut stdout_content).await;
         }
 
-        let text = response
-            .text()
+        if let Some(mut stderr) = stderr {
+            let mut reader = BufReader::new(stderr);
+            let _ = reader.read_to_string(&mut stderr_content).await;
+        }
+
+        println!("[MCP DEBUG] stdout: {}", stdout_content.trim());
+        println!("[MCP DEBUG] stderr: {}", stderr_content.trim());
+
+        let status = child
+            .wait()
             .await
-            .map_err(|e| McpError::RequestFailed(e.to_string()))?;
+            .map_err(|e| {
+                println!("[MCP DEBUG] Wait error: {}", e);
+                McpError::ConnectionFailed(format!("Wait error: {}", e))
+            })?;
 
-        // 尝试解析 JSON-RPC 响应
-        serde_json::from_str(&text)
-            .map_err(|e| McpError::InvalidResponse(format!("JSON parse error: {}", e)))
-    }
+        println!("[MCP DEBUG] Exit status: {}", status);
 
-    /// 建立连接（健康检查）
-    pub async fn connect(&self) -> Result<(), McpError> {
-        let url = format!("{}/message", self.base_url);
-
-        let response = self
-            .client
-            .get(&url)
-            .timeout(Duration::from_secs(5))
-            .send()
-            .await
-            .map_err(|e| McpError::ConnectionFailed(e.to_string()))?;
-
-        if response.status().is_success() || response.status().as_u16() == 405 {
-            // 405 Method Not Allowed 可能表示端点存在但不支持 GET
+        if status.success() {
+            println!("[MCP DEBUG] Connection test successful");
             Ok(())
         } else {
+            println!("[MCP DEBUG] Connection test failed");
             Err(McpError::ConnectionFailed(format!(
-                "Health check failed: {}",
-                response.status()
+                "claude --version failed with status: {}",
+                status
             )))
         }
     }
+
+    /// 执行单次命令
+    pub async fn execute(&mut self, command: &str) -> Result<String, McpError> {
+        println!("[MCP DEBUG] Executing command: {}", command);
+
+        // 在 Windows 上使用 cmd.exe 来执行 claude
+        // 清除 CLAUDECODE 环境变量以避免嵌套会话检测
+        #[cfg(target_os = "windows")]
+        let mut child = Command::new("cmd")
+            .args(["/C", "claude", "-p", "--output-format", "text", command])
+            .env("CLAUDECODE", "")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| {
+                println!("[MCP DEBUG] Failed to spawn claude: {}", e);
+                McpError::RequestFailed(format!("Failed to spawn claude: {}", e))
+            })?;
+
+        #[cfg(not(target_os = "windows"))]
+        let mut child = Command::new("claude")
+            .args(["-p", "--output-format", "text"])
+            .arg(command)
+            .env("CLAUDECODE", "")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| {
+                println!("[MCP DEBUG] Failed to spawn claude: {}", e);
+                McpError::RequestFailed(format!("Failed to spawn claude: {}", e))
+            })?;
+
+        println!("[MCP DEBUG] Process spawned for command execution");
+
+        let stdout = child.stdout.take().ok_or_else(|| {
+            println!("[MCP DEBUG] Failed to get stdout");
+            McpError::RequestFailed("Failed to get stdout".to_string())
+        })?;
+        let stderr = child.stderr.take().ok_or_else(|| {
+            println!("[MCP DEBUG] Failed to get stderr");
+            McpError::RequestFailed("Failed to get stderr".to_string())
+        })?;
+
+        let mut stdout_reader = BufReader::new(stdout).lines();
+        let mut stderr_reader = BufReader::new(stderr);
+        let mut stderr_content = String::new();
+
+        // 读取 stderr
+        let _ = stderr_reader.read_to_string(&mut stderr_content).await;
+        if !stderr_content.is_empty() {
+            println!("[MCP DEBUG] stderr: {}", stderr_content.trim());
+        }
+
+        // 读取 stdout
+        let mut output_lines = Vec::new();
+        while let Some(line) = stdout_reader.next_line().await.map_err(|e| {
+            println!("[MCP DEBUG] Read error: {}", e);
+            McpError::RequestFailed(format!("Read error: {}", e))
+        })? {
+            output_lines.push(line);
+        }
+
+        // 等待进程结束
+        let status = child.wait().await.map_err(|e| {
+            println!("[MCP DEBUG] Wait error: {}", e);
+            McpError::RequestFailed(format!("Wait error: {}", e))
+        })?;
+
+        println!("[MCP DEBUG] Command execution exit status: {}", status);
+
+        if !status.success() {
+            let error_msg = if stderr_content.is_empty() {
+                format!("Command failed with status: {}", status)
+            } else {
+                stderr_content.trim().to_string()
+            };
+            println!("[MCP DEBUG] Command failed: {}", error_msg);
+            return Err(McpError::RequestFailed(error_msg));
+        }
+
+        let result = output_lines.join("\n");
+        println!("[MCP DEBUG] Command result length: {} bytes", result.len());
+        Ok(result)
+    }
+
+    /// 停止（无操作，因为没有持久进程）
+    pub async fn stop(&mut self) {
+        println!("[MCP DEBUG] Stop called (no-op for per-call mode)");
+    }
 }
 
-impl Default for HttpTransport {
+impl Default for StdioTransport {
     fn default() -> Self {
-        Self::new("http://localhost:8081".to_string())
+        Self::new()
     }
 }

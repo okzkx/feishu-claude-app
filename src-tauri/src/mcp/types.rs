@@ -1,49 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-/// JSON-RPC 2.0 请求
-#[derive(Debug, Clone, Serialize)]
-pub struct JsonRpcRequest {
-    pub jsonrpc: String,
-    pub id: u64,
-    pub method: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub params: Option<serde_json::Value>,
-}
-
-impl JsonRpcRequest {
-    pub fn new(id: u64, method: impl Into<String>) -> Self {
-        Self {
-            jsonrpc: "2.0".to_string(),
-            id,
-            method: method.into(),
-            params: None,
-        }
-    }
-
-    pub fn with_params(mut self, params: serde_json::Value) -> Self {
-        self.params = Some(params);
-        self
-    }
-}
-
-/// JSON-RPC 2.0 响应
-#[derive(Debug, Clone, Deserialize)]
-pub struct JsonRpcResponse {
-    pub jsonrpc: String,
-    pub id: u64,
-    pub result: Option<serde_json::Value>,
-    pub error: Option<JsonRpcError>,
-}
-
-/// JSON-RPC 错误
-#[derive(Debug, Clone, Deserialize)]
-pub struct JsonRpcError {
-    pub code: i32,
-    pub message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<serde_json::Value>,
-}
-
 /// MCP 错误类型
 #[derive(Debug, Clone)]
 pub enum McpError {
@@ -80,50 +36,16 @@ pub enum ConnectionStatus {
     Error,
 }
 
-/// MCP 配置
+/// MCP 配置（简化版）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpConfig {
     pub enabled: bool,
-    pub transport: McpTransport,
-    pub http_url: String,
 }
 
 impl Default for McpConfig {
     fn default() -> Self {
-        Self {
-            enabled: false,
-            transport: McpTransport::Http,
-            http_url: "http://localhost:8081".to_string(),
-        }
+        Self { enabled: false }
     }
-}
-
-/// 传输方式
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum McpTransport {
-    Http,
-    Stdio,
-}
-
-/// 服务器信息
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServerInfo {
-    pub name: String,
-    pub version: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub protocol_version: Option<String>,
-}
-
-/// MCP 能力
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct McpCapabilities {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub resources: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub prompts: Option<bool>,
 }
 
 /// 连接状态信息（用于前端）
@@ -149,13 +71,18 @@ impl Default for McpConnectionInfo {
     }
 }
 
-/// 工具定义
+/// 服务器信息（保留用于兼容）
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Tool {
+pub struct ServerInfo {
     pub name: String,
-    pub description: String,
+    pub version: String,
+}
+
+/// MCP 能力（保留用于兼容）
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct McpCapabilities {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub input_schema: Option<serde_json::Value>,
+    pub tools: Option<bool>,
 }
 
 #[cfg(test)]
@@ -163,27 +90,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_json_rpc_request_new() {
-        let request = JsonRpcRequest::new(1, "initialize");
-        assert_eq!(request.jsonrpc, "2.0");
-        assert_eq!(request.id, 1);
-        assert_eq!(request.method, "initialize");
-        assert!(request.params.is_none());
-    }
-
-    #[test]
-    fn test_json_rpc_request_with_params() {
-        let params = serde_json::json!({"key": "value"});
-        let request = JsonRpcRequest::new(1, "test").with_params(params.clone());
-        assert_eq!(request.params, Some(params));
-    }
-
-    #[test]
     fn test_mcp_config_default() {
         let config = McpConfig::default();
         assert!(!config.enabled);
-        assert_eq!(config.transport, McpTransport::Http);
-        assert_eq!(config.http_url, "http://localhost:8081");
     }
 
     #[test]
@@ -209,32 +118,12 @@ mod tests {
 
     #[test]
     fn test_mcp_config_serialization() {
-        let config = McpConfig {
-            enabled: true,
-            transport: McpTransport::Http,
-            http_url: "http://localhost:9000".to_string(),
-        };
+        let config = McpConfig { enabled: true };
 
         let json = serde_json::to_string(&config).unwrap();
         assert!(json.contains("\"enabled\":true"));
-        assert!(json.contains("\"transport\":\"http\""));
-        assert!(json.contains("\"http_url\":\"http://localhost:9000\""));
 
         let deserialized: McpConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.enabled, config.enabled);
-        assert_eq!(deserialized.transport, config.transport);
-        assert_eq!(deserialized.http_url, config.http_url);
-    }
-
-    #[test]
-    fn test_json_rpc_request_serialization() {
-        let request = JsonRpcRequest::new(1, "initialize")
-            .with_params(serde_json::json!({"protocolVersion": "2025-03-26"}));
-
-        let json = serde_json::to_string(&request).unwrap();
-        assert!(json.contains("\"jsonrpc\":\"2.0\""));
-        assert!(json.contains("\"id\":1"));
-        assert!(json.contains("\"method\":\"initialize\""));
-        assert!(json.contains("\"protocolVersion\":\"2025-03-26\""));
     }
 }

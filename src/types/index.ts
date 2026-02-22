@@ -1,7 +1,5 @@
 export interface McpConfig {
   enabled: boolean;
-  transport: 'http' | 'stdio';
-  httpUrl: string;
 }
 
 export interface AppConfig {
