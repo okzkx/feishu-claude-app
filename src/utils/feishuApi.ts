@@ -91,7 +91,6 @@ export class FeishuApi {
   private async getTenantAccessToken(): Promise<string> {
     // 如果 token 未过期，直接返回
     if (this.tenantToken && Date.now() < this.tokenExpireTime) {
-      console.log("getTenantAccessToken: 使用缓存的 token");
       return this.tenantToken;
     }
 
@@ -99,7 +98,6 @@ export class FeishuApi {
       throw new Error("飞书 API 未初始化，请先配置");
     }
 
-    console.log("getTenantAccessToken: 请求新 token...");
     const response = await this.axiosInstance.post<TokenData & { code: number; msg: string }>(
       "/auth/v3/tenant_access_token/internal",
       {
@@ -107,9 +105,6 @@ export class FeishuApi {
         app_secret: this.config.feishuAppSecret,
       }
     );
-
-    console.log("getTenantAccessToken: response", response);
-    console.log("getTenantAccessToken: response.data", response.data);
 
     const { code, msg, tenant_access_token, expire } = response.data as any;
     if (code !== 0) {
@@ -120,7 +115,6 @@ export class FeishuApi {
     // 提前 5 分钟过期
     this.tokenExpireTime = Date.now() + ((expire || 7200) - 300) * 1000;
 
-    console.log("getTenantAccessToken: token 获取成功");
     return this.tenantToken;
   }
 
@@ -143,9 +137,6 @@ export class FeishuApi {
       throw new Error("飞书 API 未初始化");
     }
 
-    console.log("getMessages: 开始获取消息 [v2]");
-    console.log("getMessages: chatId", this.config.feishuChatId);
-
     const headers = await this.getHeaders();
     const response = await this.axiosInstance.get<any>(
       "/im/v1/messages",
@@ -155,12 +146,10 @@ export class FeishuApi {
           container_id_type: "chat",
           container_id: this.config.feishuChatId,
           page_size: 20,
-          sort_type: "ByCreateTimeDesc", // 按时间降序，最新消息在前
+          sort_type: "ByCreateTimeDesc",
         },
       }
     );
-
-    console.log("getMessages: response.data", response.data);
 
     const { code, msg, data } = response.data;
     if (code !== 0) {
@@ -175,8 +164,6 @@ export class FeishuApi {
       parseInt(b.create_time) - parseInt(a.create_time)
     );
 
-    console.log("getMessages: 排序后第一条消息时间", messageItems[0]?.create_time, "最后一条", messageItems[messageItems.length-1]?.create_time);
-
     // 转换为统一格式
     return messageItems.map((item: any) => ({
       messageId: item.message_id,
@@ -187,13 +174,14 @@ export class FeishuApi {
       senderType: item.sender?.sender_type || 'unknown',
       content: this.parseContent(item.body?.content || ""),
       msgType: item.msg_type,
-      createTime: parseInt(item.create_time) / 1000, // 转换为秒级时间戳
+      createTime: parseInt(item.create_time) / 1000,
       status: "pending" as const,
     }));
   }
 
   /**
    * 发送消息到群聊
+   * 飞书 API 文档: https://open.larkoffice.com/document/server-docs/im-v1/message/create
    */
   async sendMessage(content: string, msgType: string = "text"): Promise<boolean> {
     if (!this.config) {
@@ -209,10 +197,10 @@ export class FeishuApi {
       messageContent = content;
     }
 
+    // 飞书发送消息 API 需要将 receive_id_type 和 receive_id 作为查询参数
     const response = await this.axiosInstance.post<FeishuResponse<unknown>>(
-      "/im/v1/messages",
+      `/im/v1/messages?receive_id_type=chat_id&receive_id=${this.config.feishuChatId}`,
       {
-        chat_id: this.config.feishuChatId,
         msg_type: msgType,
         content: messageContent,
       },
@@ -221,7 +209,7 @@ export class FeishuApi {
 
     const { code, msg } = response.data;
     if (code !== 0) {
-      console.error(`发送消息失败: ${msg}`);
+      console.error(`发送消息失败: code=${code}, msg=${msg}`);
       return false;
     }
 
@@ -261,9 +249,7 @@ export class FeishuApi {
    * 获取群聊列表（用于获取 Chat ID）
    */
   async getChatList(pageSize: number = 20): Promise<ChatItem[]> {
-    console.log("getChatList: 开始获取群聊列表");
     const headers = await this.getHeaders();
-    console.log("getChatList: headers 获取成功");
 
     const response = await this.axiosInstance.get<FeishuResponse<ChatListData>>(
       "/im/v1/chats",
@@ -274,9 +260,6 @@ export class FeishuApi {
         },
       }
     );
-
-    console.log("getChatList: response", response);
-    console.log("getChatList: response.data", response.data);
 
     const { code, msg, data } = response.data;
     if (code !== 0) {

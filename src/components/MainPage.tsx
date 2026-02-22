@@ -10,6 +10,9 @@ import {
   message,
   Divider,
   Typography,
+  Spin,
+  Alert,
+  Tooltip,
 } from "antd";
 import {
   PlayCircleOutlined,
@@ -17,6 +20,9 @@ import {
   SettingOutlined,
   SendOutlined,
   ReloadOutlined,
+  SyncOutlined,
+  CheckCircleOutlined,
+  StopOutlined,
 } from "@ant-design/icons";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -35,27 +41,44 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [recentMessages, setRecentMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [testCommand, setTestCommand] = useState("");
+  const [testLoading, setTestLoading] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; output: string } | null>(null);
 
   useEffect(() => {
+    // 初始化时同步后端轮询状态
+    invoke<boolean>("is_polling_running").then(setIsRunning).catch(console.error);
+
     // 监听轮询事件
     const unlisten = listen("poll-tick", async () => {
-      await pollMessages();
+      await pollMessages(true);
+    });
+
+    // 监听轮询状态
+    listen<string>("polling-status", (event) => {
+      if (event.payload === "started") {
+        setIsRunning(true);
+      } else if (event.payload === "stopped") {
+        setIsRunning(false);
+      }
     });
 
     // 监听 Claude 状态
     listen<string>("claude-status", (event) => {
       if (event.payload === "executing") {
-        message.loading({ content: "Claude 正在执行...", key: "claude" });
+        message.loading({ content: "Claude 正在执行...", key: "claude", duration: 0 });
+      } else if (event.payload === "completed") {
+        message.destroy("claude");
       }
     });
 
     // 监听 Claude 结果
     listen<TaskResult>("claude-result", (event) => {
       if (event.payload.success) {
-        message.success({ content: "执行成功", key: "claude" });
+        message.success({ content: "执行成功", key: "claude-result" });
       } else {
-        message.error({ content: "执行失败", key: "claude" });
+        message.error({ content: "执行失败", key: "claude-result" });
       }
     });
 
@@ -64,54 +87,38 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     };
   }, []);
 
-  const pollMessages = async () => {
+  const pollMessages = async (isAutoRefresh: boolean = false) => {
+    if (!isAutoRefresh) {
+      setRefreshing(true);
+    }
+
     try {
       const msgs = await feishuApi.getMessages();
-      console.log("pollMessages: 获取到消息", msgs.length, "条");
 
       // 显示最近10条文本消息
       setRecentMessages(msgs.filter(m => m.msgType === 'text').slice(0, 10));
 
       for (const msg of msgs) {
-        console.log("pollMessages: 处理消息", msg.messageId, msg.msgType, msg.content?.substring(0, 50));
-
         // 检查是否已处理
         const processed = await invoke<boolean>("is_message_processed", {
           messageId: msg.messageId,
         });
 
-        if (processed) {
-          console.log("pollMessages: 已处理，跳过");
-          continue;
-        }
+        if (processed) continue;
 
         // 过滤：只处理文本消息
-        if (msg.msgType !== "text") {
-          console.log("pollMessages: 非文本消息，跳过", msg.msgType);
-          continue;
-        }
+        if (msg.msgType !== "text") continue;
 
         // 过滤：只处理我的消息
-        if (!feishuApi.isMyMessage(msg.senderId)) {
-          console.log("pollMessages: 非我的消息，跳过", msg.senderId);
-          continue;
-        }
+        if (!feishuApi.isMyMessage(msg.senderId)) continue;
 
         // 检查命令前缀
         const prefix = feishuApi.getCmdPrefix();
-        if (!msg.content?.startsWith(prefix)) {
-          console.log("pollMessages: 不匹配前缀，跳过", prefix, msg.content?.substring(0, 20));
-          continue;
-        }
+        if (!msg.content?.startsWith(prefix)) continue;
 
         // 提取命令
         const command = msg.content.slice(prefix.length).trim();
-        if (!command) {
-          console.log("pollMessages: 命令为空，跳过");
-          continue;
-        }
-
-        console.log("pollMessages: 找到有效命令", command);
+        if (!command) continue;
 
         // 标记已处理
         await invoke("mark_message_processed", { messageId: msg.messageId });
@@ -133,9 +140,7 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
           await feishuApi.sendMessage(`执行完成：\n${result.output}`);
           setMessages((prev) =>
             prev.map((m) =>
-              m.messageId === msg.messageId
-                ? { ...m, status: "completed" }
-                : m
+              m.messageId === msg.messageId ? { ...m, status: "completed" } : m
             )
           );
         } else {
@@ -149,21 +154,43 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
       }
     } catch (error) {
       console.error("轮询失败:", error);
+      if (!isAutoRefresh) {
+        message.error(`刷新失败: ${error}`);
+      }
+    } finally {
+      setRefreshing(false);
     }
   };
 
   const handleStart = async () => {
     setLoading(true);
     try {
-      await invoke("start_polling");
-      setIsRunning(true);
-      message.success("轮询已启动");
+      // 先检查后端是否已经在轮询
+      const isBackendRunning = await invoke<boolean>("is_polling_running");
 
-      // 发送启动通知
-      await feishuApi.sendMessage(
-        `Claude 机器人已启动！\n指令格式：${config?.cmdPrefix}你的指令`
-      );
+      if (isBackendRunning) {
+        setIsRunning(true);
+        message.info("轮询已在运行中");
+      } else {
+        setIsRunning(true);
+        message.success("轮询已启动");
+
+        // 发送启动通知
+        feishuApi.sendMessage(
+          `Claude 机器人已启动！\n指令格式：${config?.cmdPrefix}你的指令`
+        ).catch(console.error);
+
+        // start_polling 是阻塞的，不等待它完成
+        invoke("start_polling").catch((error) => {
+          console.error("轮询错误:", error);
+          if (!String(error).includes("已在运行")) {
+            setIsRunning(false);
+            message.error(`轮询异常: ${error}`);
+          }
+        });
+      }
     } catch (error) {
+      setIsRunning(false);
       message.error(`启动失败: ${error}`);
     } finally {
       setLoading(false);
@@ -173,11 +200,13 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
   const handleStop = async () => {
     setLoading(true);
     try {
-      await invoke("stop_polling");
       setIsRunning(false);
       message.info("轮询已停止");
 
-      await feishuApi.sendMessage("Claude 机器人已停止");
+      await invoke("stop_polling");
+
+      // 异步发送停止通知，不阻塞
+      feishuApi.sendMessage("Claude 机器人已停止").catch(console.error);
     } catch (error) {
       message.error(`停止失败: ${error}`);
     } finally {
@@ -191,10 +220,17 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
       return;
     }
 
-    setLoading(true);
+    setTestLoading(true);
+    setTestResult(null);
+
     try {
       const result = await invoke<TaskResult>("execute_claude", {
         command: testCommand,
+      });
+
+      setTestResult({
+        success: result.success,
+        output: result.output,
       });
 
       if (result.success) {
@@ -203,9 +239,14 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
         message.error("执行失败");
       }
     } catch (error) {
+      console.error("执行错误:", error);
+      setTestResult({
+        success: false,
+        output: String(error),
+      });
       message.error(`执行失败: ${error}`);
     } finally {
-      setLoading(false);
+      setTestLoading(false);
     }
   };
 
@@ -223,7 +264,6 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     failed: "失败",
   };
 
-  // 格式化时间
   const formatTime = (timestamp: number) => {
     const date = new Date(timestamp * 1000);
     const now = new Date();
@@ -242,13 +282,47 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     });
   };
 
+  const PollingStatusIndicator = () => (
+    <Space size="small">
+      {isRunning ? (
+        <>
+          <Tag
+            icon={<SyncOutlined spin />}
+            color="processing"
+            style={{ fontSize: 14, padding: '4px 12px' }}
+          >
+            轮询中
+          </Tag>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            每 {config?.pollInterval || 5} 秒刷新
+          </Text>
+        </>
+      ) : (
+        <Tag
+          icon={<StopOutlined />}
+          color="default"
+          style={{ fontSize: 14, padding: '4px 12px' }}
+        >
+          已停止
+        </Tag>
+      )}
+    </Space>
+  );
+
   return (
     <div className="main-page">
       <Card
         title={
           <Space>
-            <Badge status={isRunning ? "processing" : "default"} />
-            <span>飞书 Claude 消息轮询</span>
+            <Badge
+              status={isRunning ? "processing" : "default"}
+              text={
+                <Space>
+                  <span style={{ fontSize: 16, fontWeight: 500 }}>飞书 Claude 消息轮询</span>
+                  <PollingStatusIndicator />
+                </Space>
+              }
+            />
           </Space>
         }
         extra={
@@ -261,7 +335,7 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
       >
         <Space direction="vertical" style={{ width: "100%" }} size="large">
           {/* 控制区 */}
-          <Space>
+          <Space wrap>
             {!isRunning ? (
               <Button
                 type="primary"
@@ -281,68 +355,121 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
                 停止轮询
               </Button>
             )}
-            <Button icon={<ReloadOutlined />} onClick={pollMessages}>
-              手动刷新
-            </Button>
+            <Tooltip title={refreshing ? "正在刷新..." : "手动刷新消息"}>
+              <Button
+                icon={<ReloadOutlined spin={refreshing} />}
+                onClick={() => pollMessages(false)}
+                loading={refreshing}
+                disabled={refreshing}
+              >
+                手动刷新
+              </Button>
+            </Tooltip>
           </Space>
+
+          {/* 刷新状态提示 */}
+          {refreshing && (
+            <Alert
+              message="正在从飞书服务器获取消息..."
+              type="info"
+              showIcon
+              icon={<SyncOutlined spin />}
+              style={{ marginBottom: 8 }}
+            />
+          )}
 
           <Divider />
 
           {/* 测试区 */}
           <Card size="small" title="本地测试">
-            <Space.Compact style={{ width: "100%" }}>
-              <Input
-                placeholder="输入测试指令"
-                value={testCommand}
-                onChange={(e) => setTestCommand(e.target.value)}
-                onPressEnter={handleTestCommand}
-              />
-              <Button
-                type="primary"
-                icon={<SendOutlined />}
-                onClick={handleTestCommand}
-                loading={loading}
-              >
-                执行
-              </Button>
-            </Space.Compact>
+            <Space direction="vertical" style={{ width: "100%" }}>
+              <Space.Compact style={{ width: "100%" }}>
+                <Input
+                  placeholder="输入测试指令"
+                  value={testCommand}
+                  onChange={(e) => setTestCommand(e.target.value)}
+                  onPressEnter={handleTestCommand}
+                  disabled={testLoading}
+                />
+                <Button
+                  type="primary"
+                  icon={<SendOutlined />}
+                  onClick={handleTestCommand}
+                  loading={testLoading}
+                >
+                  执行
+                </Button>
+              </Space.Compact>
+
+              {/* 测试结果显示 */}
+              {testResult && (
+                <div style={{
+                  marginTop: 12,
+                  padding: 12,
+                  backgroundColor: testResult.success ? '#f6ffed' : '#fff2f0',
+                  border: `1px solid ${testResult.success ? '#b7eb8f' : '#ffccc7'}`,
+                  borderRadius: 6,
+                }}>
+                  <Space>
+                    {testResult.success ? (
+                      <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                    ) : (
+                      <StopOutlined style={{ color: '#ff4d4f' }} />
+                    )}
+                    <Text strong>{testResult.success ? '执行成功' : '执行失败'}</Text>
+                  </Space>
+                  <Paragraph
+                    style={{
+                      marginTop: 8,
+                      marginBottom: 0,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-all',
+                      maxHeight: 200,
+                      overflow: 'auto',
+                    }}
+                  >
+                    {testResult.output}
+                  </Paragraph>
+                </div>
+              )}
+            </Space>
           </Card>
 
           <Divider />
 
           {/* 最近消息 */}
           <Card size="small" title={`最近消息 (${recentMessages.length})`}>
-            <div style={{ maxHeight: 400, overflowY: 'auto' }}>
-              {recentMessages.length === 0 ? (
-                <Text type="secondary">暂无消息</Text>
-              ) : (
-                recentMessages.map((item) => (
-                  <div
-                    key={item.messageId}
-                    style={{
-                      padding: '12px 0',
-                      borderBottom: '1px solid #f0f0f0',
-                    }}
-                  >
-                    {/* 头部：用户名 + 时间 */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <Space>
-                        <Tag color={item.senderType === 'user' ? 'green' : 'blue'}>
-                          {item.senderName || '未知'}
-                        </Tag>
-                      </Space>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {formatTime(item.createTime)}
-                      </Text>
+            <Spin spinning={refreshing} tip="加载中...">
+              <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+                {recentMessages.length === 0 ? (
+                  <Text type="secondary">暂无消息</Text>
+                ) : (
+                  recentMessages.map((item) => (
+                    <div
+                      key={item.messageId}
+                      style={{
+                        padding: '12px 0',
+                        borderBottom: '1px solid #f0f0f0',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <Space>
+                          <Tag color={item.senderType === 'user' ? 'green' : 'blue'}>
+                            {item.senderName || '未知'}
+                          </Tag>
+                        </Space>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {formatTime(item.createTime)}
+                        </Text>
+                      </div>
+                      <div style={{ paddingLeft: 8 }}>
+                        <Text>{item.content || '(无内容)'}</Text>
+                      </div>
                     </div>
-                    {/* 消息内容 */}
-                    <div style={{ paddingLeft: 8 }}>
-                      <Text>{item.content || '(无内容)'}</Text>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+                  ))
+                )}
+              </div>
+            </Spin>
           </Card>
 
           <Divider />
