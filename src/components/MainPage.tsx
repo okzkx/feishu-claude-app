@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Card,
   Button,
@@ -50,25 +50,33 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
   const [testResult, setTestResult] = useState<{ success: boolean; output: string } | null>(null);
   const [mcpStatus, setMcpStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const [mcpNotified, setMcpNotified] = useState(false); // 是否已通知用户 MCP 断开
-  const [lastMessageId, setLastMessageId] = useState<string | null>(null); // 记录最新消息 ID
-  const [isFirstPoll, setIsFirstPoll] = useState(true); // 是否首次轮询
+
+  // 使用 ref 解决事件监听器中的闭包问题
+  // 事件监听器调用 pollMessages 时，需要获取最新的值，而不是闭包中捕获的旧值
+  const lastMessageIdRef = useRef<string | null>(null);
+  const isFirstPollRef = useRef(true);
 
   // 定义 pollMessages 在 useEffect 之前，避免变量提升问题
+  // 使用 ref 确保总是获取最新的值，避免事件监听器中的闭包问题
   const pollMessages = useCallback(async (isAutoRefresh: boolean = false) => {
     if (!isAutoRefresh) {
       setRefreshing(true);
     }
 
     try {
+      // 从 ref 获取最新值
+      const isFirstPoll = isFirstPollRef.current;
+      const lastMessageId = lastMessageIdRef.current;
+
       // 首次拉取 20 条，后续只拉取 1 条
       const pageSize = isFirstPoll ? 20 : 1;
       const msgs = await feishuApi.getMessages(pageSize);
 
       // 首次拉取时记录最新消息 ID 并显示消息列表
       if (isFirstPoll && msgs.length > 0) {
-        setLastMessageId(msgs[0].messageId);
+        lastMessageIdRef.current = msgs[0].messageId;
         setRecentMessages(msgs.filter(m => m.msgType === 'text').slice(0, 10));
-        setIsFirstPoll(false);
+        isFirstPollRef.current = false;
         return;
       }
 
@@ -76,8 +84,8 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
       if (msgs.length > 0 && msgs[0].messageId !== lastMessageId) {
         const newMsg = msgs[0];
 
-        // 更新最新消息 ID
-        setLastMessageId(newMsg.messageId);
+        // 更新最新消息 ID（ref）
+        lastMessageIdRef.current = newMsg.messageId;
 
         // 更新最近消息列表
         setRecentMessages((prev) => {
@@ -128,7 +136,7 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     } finally {
       setRefreshing(false);
     }
-  }, [isFirstPoll, lastMessageId]);
+  }, []); // 依赖数组为空，因为使用 ref 获取最新值
 
   useEffect(() => {
     // 初始化时同步后端轮询状态

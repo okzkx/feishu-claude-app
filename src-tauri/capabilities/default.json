@@ -10,6 +10,9 @@
       "allow": [
         {
           "url": "https://open.feishu.cn/**"
+        },
+        {
+          "url": "https://open.larkoffice.com/**"
         }
       ]
     },
