@@ -17,6 +17,15 @@ fn session_id_from_chat_id(chat_id: &str) -> Uuid {
     Uuid::from_slice(&hash[..16]).unwrap_or_else(|_| Uuid::new_v4())
 }
 
+/// 生成固定的全局会话 UUID（用于永久记忆）
+/// 基于 "feishu-claude-app-global-session" 字符串的 SHA-256 哈希
+fn get_global_session_id() -> Uuid {
+    let mut hasher = Sha256::new();
+    hasher.update(b"feishu-claude-app-global-session");
+    let hash = hasher.finalize();
+    Uuid::from_slice(&hash[..16]).unwrap_or_else(|_| Uuid::new_v4())
+}
+
 /// 获取 Claude 会话文件路径
 /// 会话文件存储在 ~/.claude/projects/<escaped-cwd>/<session-id>.jsonl
 fn get_session_file_path(session_id: &Uuid, working_dir: &PathBuf) -> PathBuf {
@@ -140,46 +149,30 @@ impl StdioTransport {
     }
 
     /// 执行单次命令
-    /// session_key: 可选的会话键（通常是 chatId），用于保持会话连续性
-    pub async fn execute(&mut self, command: &str, session_key: Option<&str>) -> Result<String, McpError> {
+    /// 始终使用全局会话 ID，保持永久记忆
+    pub async fn execute(&mut self, command: &str, _session_key: Option<&str>) -> Result<String, McpError> {
         println!("[MCP DEBUG] Executing command: {}", command);
 
-        // 基于 session_key 生成确定性的 session_id
-        // 这样即使应用重启，也能恢复之前的会话
-        let (session_id, is_new_session) = match session_key {
-            Some(key) => {
-                // 使用确定性 UUID（基于 chat_id 的 SHA-256 哈希）
-                let session_id = session_id_from_chat_id(key);
+        // 始终使用全局会话 ID（永久记忆模式）
+        let session_id = get_global_session_id();
 
-                // 关键：检查磁盘上是否存在会话文件（而不是只检查内存缓存）
-                let exists_on_disk = session_exists_on_disk(&session_id, &self.working_dir);
-                let is_new = !exists_on_disk;
+        // 检查磁盘上是否存在会话文件
+        let exists_on_disk = session_exists_on_disk(&session_id, &self.working_dir);
+        let is_new_session = !exists_on_disk;
 
-                // 更新内存缓存（用于快速查找）
-                self.session_store.insert(key.to_string(), session_id);
-
-                if is_new {
-                    println!("[MCP DEBUG] Creating NEW session - key: {}, id: {}", key, session_id);
-                } else {
-                    println!("[MCP DEBUG] RESUMING existing session - key: {}, id: {}", key, session_id);
-                }
-                (session_id, is_new)
-            }
-            None => (Uuid::nil(), false),
-        };
+        if is_new_session {
+            println!("[MCP DEBUG] Creating NEW global session, id: {}", session_id);
+        } else {
+            println!("[MCP DEBUG] RESUMING global session, id: {}", session_id);
+        }
 
         // 构建命令参数
-        // 新会话使用 --session-id，已存在的会话使用 --resume
-        let session_id_str;
-        let args: Vec<&str> = if session_key.is_some() {
-            session_id_str = session_id.to_string();
-            if is_new_session {
-                vec!["/C", "claude", "-p", "--output-format", "text", "--dangerously-skip-permissions", "--session-id", &session_id_str, command]
-            } else {
-                vec!["/C", "claude", "-p", "--output-format", "text", "--dangerously-skip-permissions", "--resume", &session_id_str, command]
-            }
+        // 始终使用会话 ID，新会话用 --session-id，已存在用 --resume
+        let session_id_str = session_id.to_string();
+        let args: Vec<&str> = if is_new_session {
+            vec!["/C", "claude", "-p", "--output-format", "text", "--dangerously-skip-permissions", "--session-id", &session_id_str, command]
         } else {
-            vec!["/C", "claude", "-p", "--output-format", "text", "--dangerously-skip-permissions", command]
+            vec!["/C", "claude", "-p", "--output-format", "text", "--dangerously-skip-permissions", "--resume", &session_id_str, command]
         };
 
         // 在 Windows 上使用 cmd.exe 来执行 claude
@@ -202,12 +195,10 @@ impl StdioTransport {
         let mut child = {
             let mut cmd = Command::new("claude");
             cmd.args(["-p", "--output-format", "text", "--dangerously-skip-permissions"]);
-            if session_key.is_some() {
-                if is_new_session {
-                    cmd.arg("--session-id").arg(session_id.to_string());
-                } else {
-                    cmd.arg("--resume").arg(session_id.to_string());
-                }
+            if is_new_session {
+                cmd.arg("--session-id").arg(session_id.to_string());
+            } else {
+                cmd.arg("--resume").arg(session_id.to_string());
             }
             cmd.arg(command)
                 .current_dir(&self.working_dir)

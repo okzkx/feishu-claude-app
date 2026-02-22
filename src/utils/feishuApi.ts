@@ -150,7 +150,8 @@ export class FeishuApi {
     // 转换为统一格式
     return messageItems.map((item: any) => ({
       messageId: item.message_id,
-      chatId: item.chat_id,
+      // 使用消息中的 chat_id，如果没有则使用配置中的 feishuChatId
+      chatId: item.chat_id || this.config!.feishuChatId,
       senderId: item.sender?.id || "",
       senderName: item.sender?.sender_type === 'user' ? '用户' :
                  item.sender?.sender_type === 'app' ? '机器人' : '系统',
