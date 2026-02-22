@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "default",
+  "description": "Default capabilities for the application",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "https://open.feishu.cn/**"
+        }
+      ]
+    },
+    "http:allow-fetch",
+    "shell:allow-open",
+    "shell:allow-execute",
+    "store:default",
+    "store:allow-get",
+    "store:allow-set",
+    "store:allow-save"
+  ]
+}
