@@ -94,6 +94,12 @@ impl McpClient {
     pub fn config(&self) -> &McpConfig {
         &self.config
     }
+
+    /// 清除全局会话记忆
+    pub async fn clear_memory(&self) -> Result<(), McpError> {
+        let transport = self.transport.lock().await;
+        transport.clear_global_session()
+    }
 }
 
 impl Default for McpClient {
@@ -154,6 +160,11 @@ impl McpClientManager {
     pub async fn config(&self) -> McpConfig {
         let client = self.client.lock().await;
         client.config().clone()
+    }
+
+    pub async fn clear_memory(&self) -> Result<(), McpError> {
+        let client = self.client.lock().await;
+        client.clear_memory().await
     }
 }
 

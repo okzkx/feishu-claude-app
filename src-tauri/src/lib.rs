@@ -207,6 +207,15 @@ async fn mcp_disconnect(
     Ok(())
 }
 
+// 清除 Claude 记忆
+#[tauri::command]
+async fn clear_claude_memory(
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    state.mcp_client.clear_memory().await
+        .map_err(|e| format!("清除记忆失败: {}", e))
+}
+
 // 执行 Claude 命令
 #[tauri::command]
 async fn execute_claude(
@@ -291,6 +300,7 @@ pub fn run() {
             mcp_status,
             mcp_connect,
             mcp_disconnect,
+            clear_claude_memory,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

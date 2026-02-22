@@ -13,6 +13,7 @@ import {
   Spin,
   Alert,
   Tooltip,
+  Modal,
 } from "antd";
 import {
   PlayCircleOutlined,
@@ -323,6 +324,24 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     }
   };
 
+  const handleClearMemory = async () => {
+    Modal.confirm({
+      title: '确认清除记忆',
+      content: '这将删除 Claude 的所有对话记忆，此操作不可恢复。确定要继续吗？',
+      okText: '确认清除',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await invoke("clear_claude_memory");
+          message.success("记忆已清除");
+        } catch (error) {
+          message.error(`清除失败: ${error}`);
+        }
+      },
+    });
+  };
+
   const statusColors: Record<string, string> = {
     pending: "default",
     processing: "processing",
@@ -504,6 +523,15 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
                 disabled={refreshing}
               >
                 手动刷新
+              </Button>
+            </Tooltip>
+            <Tooltip title="清除 Claude 的所有记忆">
+              <Button
+                danger
+                icon={<StopOutlined />}
+                onClick={handleClearMemory}
+              >
+                清除记忆
               </Button>
             </Tooltip>
           </Space>

@@ -270,17 +270,19 @@ impl StdioTransport {
         println!("[MCP DEBUG] Stop called (no-op for per-call mode)");
     }
 
-    /// 清除指定会话
-    pub fn clear_session(&mut self, session_key: &str) {
-        if let Some(id) = self.session_store.remove(session_key) {
-            println!("[MCP DEBUG] Cleared session: key={}, id={}", session_key, id);
-        }
-    }
+    /// 清除全局会话文件（删除记忆）
+    pub fn clear_global_session(&self) -> Result<(), McpError> {
+        let session_id = get_global_session_id();
+        let session_file = get_session_file_path(&session_id, &self.working_dir);
 
-    /// 清除所有会话
-    pub fn clear_all_sessions(&mut self) {
-        let count = self.session_store.len();
-        self.session_store.clear();
-        println!("[MCP DEBUG] Cleared all {} sessions", count);
+        if session_file.exists() {
+            std::fs::remove_file(&session_file)
+                .map_err(|e| McpError::RequestFailed(format!("Failed to delete session file: {}", e)))?;
+            println!("[MCP DEBUG] Deleted global session file: {:?}", session_file);
+            Ok(())
+        } else {
+            println!("[MCP DEBUG] No global session file to delete");
+            Ok(())
+        }
     }
 }
