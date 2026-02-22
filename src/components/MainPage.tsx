@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Card,
   Button,
@@ -46,48 +46,8 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; output: string } | null>(null);
 
-  useEffect(() => {
-    // 初始化时同步后端轮询状态
-    invoke<boolean>("is_polling_running").then(setIsRunning).catch(console.error);
-
-    // 监听轮询事件
-    const unlisten = listen("poll-tick", async () => {
-      await pollMessages(true);
-    });
-
-    // 监听轮询状态
-    listen<string>("polling-status", (event) => {
-      if (event.payload === "started") {
-        setIsRunning(true);
-      } else if (event.payload === "stopped") {
-        setIsRunning(false);
-      }
-    });
-
-    // 监听 Claude 状态
-    listen<string>("claude-status", (event) => {
-      if (event.payload === "executing") {
-        message.loading({ content: "Claude 正在执行...", key: "claude", duration: 0 });
-      } else if (event.payload === "completed") {
-        message.destroy("claude");
-      }
-    });
-
-    // 监听 Claude 结果
-    listen<TaskResult>("claude-result", (event) => {
-      if (event.payload.success) {
-        message.success({ content: "执行成功", key: "claude-result" });
-      } else {
-        message.error({ content: "执行失败", key: "claude-result" });
-      }
-    });
-
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, []);
-
-  const pollMessages = async (isAutoRefresh: boolean = false) => {
+  // 定义 pollMessages 在 useEffect 之前，避免变量提升问题
+  const pollMessages = useCallback(async (isAutoRefresh: boolean = false) => {
     if (!isAutoRefresh) {
       setRefreshing(true);
     }
@@ -160,7 +120,60 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     } finally {
       setRefreshing(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    // 初始化时同步后端轮询状态
+    invoke<boolean>("is_polling_running").then(setIsRunning).catch(console.error);
+
+    // 存储所有取消监听函数
+    const unlistenFns: Promise<() => void>[] = [];
+
+    // 监听轮询事件
+    unlistenFns.push(
+      listen("poll-tick", async () => {
+        await pollMessages(true);
+      })
+    );
+
+    // 监听轮询状态
+    unlistenFns.push(
+      listen<string>("polling-status", (event) => {
+        if (event.payload === "started") {
+          setIsRunning(true);
+        } else if (event.payload === "stopped") {
+          setIsRunning(false);
+        }
+      })
+    );
+
+    // 监听 Claude 状态
+    unlistenFns.push(
+      listen<string>("claude-status", (event) => {
+        if (event.payload === "executing") {
+          message.loading({ content: "Claude 正在执行...", key: "claude", duration: 0 });
+        } else if (event.payload === "completed") {
+          message.destroy("claude");
+        }
+      })
+    );
+
+    // 监听 Claude 结果
+    unlistenFns.push(
+      listen<TaskResult>("claude-result", (event) => {
+        if (event.payload.success) {
+          message.success({ content: "执行成功", key: "claude-result" });
+        } else {
+          message.error({ content: "执行失败", key: "claude-result" });
+        }
+      })
+    );
+
+    return () => {
+      // 清理所有事件监听器
+      unlistenFns.forEach((fn) => fn.then((f) => f()));
+    };
+  }, [pollMessages]);
 
   const handleStart = async () => {
     setLoading(true);
@@ -215,6 +228,8 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
   };
 
   const handleTestCommand = async () => {
+    console.log("handleTestCommand called, testCommand:", testCommand);
+
     if (!testCommand.trim()) {
       message.warning("请输入测试指令");
       return;
@@ -224,9 +239,11 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     setTestResult(null);
 
     try {
+      console.log("Invoking execute_claude with command:", testCommand);
       const result = await invoke<TaskResult>("execute_claude", {
         command: testCommand,
       });
+      console.log("execute_claude result:", result);
 
       setTestResult({
         success: result.success,
@@ -383,23 +400,25 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
           {/* 测试区 */}
           <Card size="small" title="本地测试">
             <Space direction="vertical" style={{ width: "100%" }}>
-              <Space.Compact style={{ width: "100%" }}>
+              <div style={{ display: 'flex', width: '100%' }}>
                 <Input
                   placeholder="输入测试指令"
                   value={testCommand}
                   onChange={(e) => setTestCommand(e.target.value)}
                   onPressEnter={handleTestCommand}
                   disabled={testLoading}
+                  style={{ flex: 1, borderRadius: '6px 0 0 6px' }}
                 />
                 <Button
                   type="primary"
                   icon={<SendOutlined />}
                   onClick={handleTestCommand}
                   loading={testLoading}
+                  style={{ borderRadius: '0 6px 6px 0' }}
                 >
                   执行
                 </Button>
-              </Space.Compact>
+              </div>
 
               {/* 测试结果显示 */}
               {testResult && (

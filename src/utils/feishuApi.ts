@@ -18,24 +18,6 @@ interface TokenData {
   expire: number;
 }
 
-interface MessageItem {
-  message_id: string;
-  chat_id: string;
-  msg_type: string;
-  content: string;
-  create_time: number;
-  sender: {
-    id: string;
-    sender_type: string;
-  };
-}
-
-interface MessageListData {
-  items: MessageItem[];
-  has_more: boolean;
-  page_token?: string;
-}
-
 interface ChatItem {
   chat_id: string;
   name: string;
@@ -115,7 +97,7 @@ export class FeishuApi {
     // 提前 5 分钟过期
     this.tokenExpireTime = Date.now() + ((expire || 7200) - 300) * 1000;
 
-    return this.tenantToken;
+    return this.tenantToken!;
   }
 
   /**
@@ -132,7 +114,7 @@ export class FeishuApi {
   /**
    * 获取群聊消息列表
    */
-  async getMessages(pageSize: number = 20): Promise<Message[]> {
+  async getMessages(_pageSize: number = 20): Promise<Message[]> {
     if (!this.config) {
       throw new Error("飞书 API 未初始化");
     }
