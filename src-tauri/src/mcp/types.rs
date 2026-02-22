@@ -40,11 +40,15 @@ pub enum ConnectionStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpConfig {
     pub enabled: bool,
+    pub working_dir: String,
 }
 
 impl Default for McpConfig {
     fn default() -> Self {
-        Self { enabled: false }
+        Self {
+            enabled: false,
+            working_dir: ".".to_string(),
+        }
     }
 }
 

@@ -1,4 +1,5 @@
 use super::types::McpError;
+use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::{Child, Command};
@@ -6,12 +7,16 @@ use tokio::process::{Child, Command};
 /// STDIO 传输层（每次调用模式）
 pub struct StdioTransport {
     _process: Option<Child>,
+    working_dir: PathBuf,
 }
 
 impl StdioTransport {
     /// 创建新的传输层
-    pub fn new() -> Self {
-        Self { _process: None }
+    pub fn new(working_dir: String) -> Self {
+        Self {
+            _process: None,
+            working_dir: PathBuf::from(working_dir),
+        }
     }
 
     /// 获取 claude 命令路径
@@ -37,6 +42,7 @@ impl StdioTransport {
         #[cfg(target_os = "windows")]
         let mut child = Command::new("cmd")
             .args(["/C", "claude", "--version"])
+            .current_dir(&self.working_dir)
             .env("CLAUDECODE", "")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -49,6 +55,7 @@ impl StdioTransport {
         #[cfg(not(target_os = "windows"))]
         let mut child = Command::new("claude")
             .arg("--version")
+            .current_dir(&self.working_dir)
             .env("CLAUDECODE", "")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -111,6 +118,7 @@ impl StdioTransport {
         #[cfg(target_os = "windows")]
         let mut child = Command::new("cmd")
             .args(["/C", "claude", "-p", "--output-format", "text", command])
+            .current_dir(&self.working_dir)
             .env("CLAUDECODE", "")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -124,6 +132,7 @@ impl StdioTransport {
         let mut child = Command::new("claude")
             .args(["-p", "--output-format", "text"])
             .arg(command)
+            .current_dir(&self.working_dir)
             .env("CLAUDECODE", "")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -189,11 +198,5 @@ impl StdioTransport {
     /// 停止（无操作，因为没有持久进程）
     pub async fn stop(&mut self) {
         println!("[MCP DEBUG] Stop called (no-op for per-call mode)");
-    }
-}
-
-impl Default for StdioTransport {
-    fn default() -> Self {
-        Self::new()
     }
 }

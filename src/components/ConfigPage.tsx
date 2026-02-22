@@ -54,10 +54,9 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
       feishuAppSecret: values.feishuAppSecret,
       feishuChatId: values.feishuChatId || "",
       feishuUserId: values.feishuUserId || "",
-      claudeProjectDir: values.claudeProjectDir || ".",
       cmdPrefix: values.cmdPrefix || "claude:",
       pollInterval: values.pollInterval || 5,
-      mcp: values.mcp || { enabled: false },
+      mcp: values.mcp || { enabled: false, workingDir: "." },
     };
     localStorage.setItem("feishu-claude-config", JSON.stringify(currentConfig));
 
@@ -145,8 +144,7 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
           initialValues={{
             cmdPrefix: "claude:",
             pollInterval: 5,
-            claudeProjectDir: ".",
-            mcp: { enabled: false },
+            mcp: { enabled: false, workingDir: "." },
           }}
         >
           <Form.Item
@@ -193,14 +191,6 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
           </Form.Item>
 
           <Form.Item
-            name="claudeProjectDir"
-            label="Claude 项目目录"
-            rules={[{ required: true, message: "请输入 Claude 项目目录" }]}
-          >
-            <Input placeholder="D:\projects\my_claude_project" />
-          </Form.Item>
-
-          <Form.Item
             name="cmdPrefix"
             label="指令前缀"
             extra="消息以此前缀开头才会被处理"
@@ -232,19 +222,29 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
             {({ getFieldValue }) => {
               const mcpEnabled = getFieldValue(['mcp', 'enabled']);
               return mcpEnabled ? (
-                <Form.Item label="连接状态">
-                  <Space>
-                    <Button
-                      type="primary"
-                      size="small"
-                      loading={mcpTesting}
-                      onClick={handleTestMcpConnection}
-                    >
-                      测试连接
-                    </Button>
-                    {renderMcpConnectionStatus()}
-                  </Space>
-                </Form.Item>
+                <>
+                  <Form.Item
+                    name={['mcp', 'workingDir']}
+                    label="Claude 项目目录"
+                    rules={[{ required: true, message: "请输入 Claude 项目目录" }]}
+                    extra="Claude 子进程的工作目录"
+                  >
+                    <Input placeholder="D:\projects\my_claude_project" />
+                  </Form.Item>
+                  <Form.Item label="连接状态">
+                    <Space>
+                      <Button
+                        type="primary"
+                        size="small"
+                        loading={mcpTesting}
+                        onClick={handleTestMcpConnection}
+                      >
+                        测试连接
+                      </Button>
+                      {renderMcpConnectionStatus()}
+                    </Space>
+                  </Form.Item>
+                </>
               ) : null;
             }}
           </Form.Item>

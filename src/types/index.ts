@@ -1,5 +1,6 @@
 export interface McpConfig {
   enabled: boolean;
+  workingDir: string;
 }
 
 export interface AppConfig {
@@ -7,7 +8,6 @@ export interface AppConfig {
   feishuAppSecret: string;
   feishuChatId: string;
   feishuUserId?: string;
-  claudeProjectDir: string;
   cmdPrefix: string;
   pollInterval: number;
   mcp: McpConfig;

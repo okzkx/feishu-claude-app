@@ -15,11 +15,12 @@ pub struct McpClient {
 impl McpClient {
     /// 创建新的 MCP 客户端
     pub fn new(config: McpConfig) -> Self {
+        let working_dir = config.working_dir.clone();
         Self {
             config,
             connected: Arc::new(AtomicBool::new(false)),
             status: Arc::new(AsyncMutex::new(ConnectionStatus::Disconnected)),
-            transport: Arc::new(AsyncMutex::new(StdioTransport::new())),
+            transport: Arc::new(AsyncMutex::new(StdioTransport::new(working_dir))),
         }
     }
 
@@ -83,7 +84,10 @@ impl McpClient {
 
     /// 更新配置
     pub async fn update_config(&mut self, config: McpConfig) {
+        let working_dir = config.working_dir.clone();
         self.config = config;
+        // 重新创建 transport 以使用新的工作目录
+        self.transport = Arc::new(AsyncMutex::new(StdioTransport::new(working_dir)));
     }
 
     /// 获取当前配置

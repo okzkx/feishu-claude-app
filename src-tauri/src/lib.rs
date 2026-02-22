@@ -15,7 +15,6 @@ pub struct AppConfig {
     pub feishu_app_secret: String,
     pub feishu_chat_id: String,
     pub feishu_user_id: Option<String>,
-    pub claude_project_dir: String,
     pub cmd_prefix: String,
     pub poll_interval: u64,
     #[serde(default)]
@@ -29,7 +28,6 @@ impl Default for AppConfig {
             feishu_app_secret: String::new(),
             feishu_chat_id: String::new(),
             feishu_user_id: None,
-            claude_project_dir: ".".to_string(),
             cmd_prefix: "claude:".to_string(),
             poll_interval: 5,
             mcp: McpConfig::default(),
