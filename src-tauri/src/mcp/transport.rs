@@ -17,6 +17,34 @@ fn session_id_from_chat_id(chat_id: &str) -> Uuid {
     Uuid::from_slice(&hash[..16]).unwrap_or_else(|_| Uuid::new_v4())
 }
 
+/// 获取 Claude 会话文件路径
+/// 会话文件存储在 ~/.claude/projects/<escaped-cwd>/<session-id>.jsonl
+fn get_session_file_path(session_id: &Uuid, working_dir: &PathBuf) -> PathBuf {
+    // 获取用户主目录
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+
+    // 转义工作目录路径（Claude 使用特定格式）
+    let escaped_cwd = working_dir
+        .to_string_lossy()
+        .replace(':', "-")
+        .replace('\\', "-")
+        .replace('/', "-");
+
+    // 构建会话文件路径
+    home.join(".claude")
+        .join("projects")
+        .join(escaped_cwd)
+        .join(format!("{}.jsonl", session_id))
+}
+
+/// 检查会话文件是否存在于磁盘上
+fn session_exists_on_disk(session_id: &Uuid, working_dir: &PathBuf) -> bool {
+    let session_file = get_session_file_path(session_id, working_dir);
+    let exists = session_file.exists();
+    println!("[MCP DEBUG] Checking session file: {:?}, exists: {}", session_file, exists);
+    exists
+}
+
 /// STDIO 传输层（每次调用模式，支持会话）
 pub struct StdioTransport {
     _process: Option<Child>,
@@ -122,14 +150,18 @@ impl StdioTransport {
             Some(key) => {
                 // 使用确定性 UUID（基于 chat_id 的 SHA-256 哈希）
                 let session_id = session_id_from_chat_id(key);
-                // 检查会话是否已存在于内存缓存中
-                let is_new = !self.session_store.contains_key(key);
+
+                // 关键：检查磁盘上是否存在会话文件（而不是只检查内存缓存）
+                let exists_on_disk = session_exists_on_disk(&session_id, &self.working_dir);
+                let is_new = !exists_on_disk;
+
+                // 更新内存缓存（用于快速查找）
+                self.session_store.insert(key.to_string(), session_id);
+
                 if is_new {
-                    // 更新内存缓存
-                    self.session_store.insert(key.to_string(), session_id);
-                    println!("[MCP DEBUG] New deterministic session key: {}, id: {}", key, session_id);
+                    println!("[MCP DEBUG] Creating NEW session - key: {}, id: {}", key, session_id);
                 } else {
-                    println!("[MCP DEBUG] Resuming deterministic session key: {}, id: {}", key, session_id);
+                    println!("[MCP DEBUG] RESUMING existing session - key: {}, id: {}", key, session_id);
                 }
                 (session_id, is_new)
             }
