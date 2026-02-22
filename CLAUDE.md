@@ -1,6 +1,6 @@
 # Feishu Claude App - 项目记忆体
 
-> 最后更新: 2026-02-22
+> 最后更新: 2026-02-23
 
 ## 项目概述
 
@@ -17,6 +17,7 @@
 2. 消息增量检测与去重
 3. 指令转发至 Claude MCP 执行
 4. 执行结果回传飞书
+5. **连续对话（永久记忆）**
 
 ---
 
@@ -35,17 +36,58 @@ feishu-claude-app/
 │   ├── src/
 │   │   ├── lib.rs          # 主入口
 │   │   ├── polling.rs      # 轮询逻辑
-│   │   ├── claude.rs       # Claude MCP 执行
-│   │   └── mcp.rs          # MCP 连接管理
+│   │   ├── mcp/            # MCP 模块
+│   │   │   ├── transport.rs # 会话管理核心
+│   │   │   ├── client.rs   # MCP 客户端
+│   │   │   └── types.rs    # 类型定义
 │   └── capabilities/       # Tauri 权限配置
 └── .claude/                # Claude Code 配置
     ├── agents/             # Agent 配置
+    │   ├── claude-cli-researcher.md
+    │   └── session-persistence-specialist.md
     └── skills/             # Skill 配置
+        ├── claude-session-management.md
+        └── permanent-memory.md
 ```
 
 ---
 
 ## 已解决问题
+
+### 2026-02-23: 连续对话功能（永久记忆）
+
+**问题**: 每次对话都是新的开始，Claude 无法记住之前的对话内容
+
+**解决方案**: 全局永久记忆模式
+- 使用固定的全局 session ID（SHA-256 哈希）
+- 检查磁盘会话文件决定创建/恢复会话
+- 添加 `--dangerously-skip-permissions` 绕过权限
+
+**核心代码** (`src-tauri/src/mcp/transport.rs`):
+```rust
+// 全局会话 ID 生成
+fn get_global_session_id() -> Uuid {
+    let mut hasher = Sha256::new();
+    hasher.update(b"feishu-claude-app-global-session");
+    let hash = hasher.finalize();
+    Uuid::from_slice(&hash[..16]).unwrap_or_else(|_| Uuid::new_v4())
+}
+
+// 检查磁盘会话文件
+fn session_exists_on_disk(session_id: &Uuid, working_dir: &PathBuf) -> bool {
+    let session_file = get_session_file_path(session_id, working_dir);
+    session_file.exists()
+}
+```
+
+**依赖添加** (`Cargo.toml`):
+```toml
+uuid = { version = "1", features = ["v4", "v5"] }
+sha2 = "0.10"
+dirs = "5"
+```
+
+---
 
 ### 2026-02-22: HTTP 请求错误 + 增量拉取失效
 
