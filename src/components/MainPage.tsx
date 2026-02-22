@@ -23,6 +23,9 @@ import {
   SyncOutlined,
   CheckCircleOutlined,
   StopOutlined,
+  ApiOutlined,
+  DisconnectOutlined,
+  CloudOutlined,
 } from "@ant-design/icons";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -45,6 +48,8 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
   const [testCommand, setTestCommand] = useState("");
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; output: string } | null>(null);
+  const [mcpStatus, setMcpStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+  const [mcpNotified, setMcpNotified] = useState(false); // 是否已通知用户 MCP 断开
 
   // 定义 pollMessages 在 useEffect 之前，避免变量提升问题
   const pollMessages = useCallback(async (isAutoRefresh: boolean = false) => {
@@ -126,6 +131,17 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     // 初始化时同步后端轮询状态
     invoke<boolean>("is_polling_running").then(setIsRunning).catch(console.error);
 
+    // 初始化时获取 MCP 状态
+    if (config.mcp?.enabled) {
+      invoke<any>("mcp_status")
+        .then((info) => {
+          if (info && info.status) {
+            setMcpStatus(info.status);
+          }
+        })
+        .catch(console.error);
+    }
+
     // 存储所有取消监听函数
     const unlistenFns: Promise<() => void>[] = [];
 
@@ -165,6 +181,39 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
           message.success({ content: "执行成功", key: "claude-result" });
         } else {
           message.error({ content: "执行失败", key: "claude-result" });
+        }
+      })
+    );
+
+    // 监听 MCP 状态变化
+    unlistenFns.push(
+      listen<string>("mcp-status", async (event) => {
+        const newStatus = event.payload as 'disconnected' | 'connecting' | 'connected' | 'error';
+        setMcpStatus(newStatus);
+
+        // 如果 MCP 断开且轮询正在运行，发送"服务不可用"消息到飞书
+        if (newStatus === 'disconnected' || newStatus === 'error') {
+          if (!mcpNotified && config.mcp?.enabled && isRunning) {
+            setMcpNotified(true);
+            await feishuApi.sendMessage("服务不可用：MCP 连接已断开，正在尝试重新连接...");
+          }
+        } else if (newStatus === 'connected') {
+          setMcpNotified(false);
+          // 发送重连成功通知
+          if (isRunning) {
+            await feishuApi.sendMessage("服务已恢复：MCP 连接已重新建立");
+          }
+        }
+      })
+    );
+
+    // 监听 MCP 重连成功事件
+    unlistenFns.push(
+      listen("mcp-reconnected", () => {
+        setMcpStatus('connected');
+        setMcpNotified(false);
+        if (isRunning) {
+          feishuApi.sendMessage("服务已恢复：MCP 连接已重新建立").catch(console.error);
         }
       })
     );
@@ -326,6 +375,73 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     </Space>
   );
 
+  const McpStatusIndicator = () => {
+    if (!config.mcp?.enabled) {
+      return (
+        <Tooltip title="MCP 未启用">
+          <Tag
+            icon={<ApiOutlined />}
+            color="default"
+            style={{ fontSize: 12, padding: '4px 8px' }}
+          >
+            MCP: 未启用
+          </Tag>
+        </Tooltip>
+      );
+    }
+
+    switch (mcpStatus) {
+      case 'connected':
+        return (
+          <Tooltip title="MCP 已连接">
+            <Tag
+              icon={<CloudOutlined />}
+              color="success"
+              style={{ fontSize: 12, padding: '4px 8px' }}
+            >
+              MCP: 已连接
+            </Tag>
+          </Tooltip>
+        );
+      case 'connecting':
+        return (
+          <Tooltip title="MCP 连接中...">
+            <Tag
+              icon={<SyncOutlined spin />}
+              color="processing"
+              style={{ fontSize: 12, padding: '4px 8px' }}
+            >
+              MCP: 连接中
+            </Tag>
+          </Tooltip>
+        );
+      case 'error':
+        return (
+          <Tooltip title="MCP 连接错误">
+            <Tag
+              icon={<DisconnectOutlined />}
+              color="error"
+              style={{ fontSize: 12, padding: '4px 8px' }}
+            >
+              MCP: 错误
+            </Tag>
+          </Tooltip>
+        );
+      default:
+        return (
+          <Tooltip title="MCP 未连接">
+            <Tag
+              icon={<DisconnectOutlined />}
+              color="default"
+              style={{ fontSize: 12, padding: '4px 8px' }}
+            >
+              MCP: 未连接
+            </Tag>
+          </Tooltip>
+        );
+    }
+  };
+
   return (
     <div className="main-page">
       <Card
@@ -344,6 +460,7 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
         }
         extra={
           <Space>
+            <McpStatusIndicator />
             <Button icon={<SettingOutlined />} onClick={onSettings}>
               设置
             </Button>
@@ -391,6 +508,22 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
               type="info"
               showIcon
               icon={<SyncOutlined spin />}
+              style={{ marginBottom: 8 }}
+            />
+          )}
+
+          {/* MCP 状态提示 */}
+          {config.mcp?.enabled && (mcpStatus === 'disconnected' || mcpStatus === 'error') && (
+            <Alert
+              message="MCP 服务不可用"
+              description={
+                mcpStatus === 'error'
+                  ? "MCP 连接出错，正在尝试重新连接..."
+                  : "MCP 连接已断开，正在尝试重新连接..."
+              }
+              type="warning"
+              showIcon
+              icon={<DisconnectOutlined />}
               style={{ marginBottom: 8 }}
             />
           )}

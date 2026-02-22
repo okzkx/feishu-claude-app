@@ -1,5 +1,6 @@
-import { Form, Input, Button, Card, InputNumber, message, Space, Modal, List, Spin } from "antd";
-import { SettingOutlined, ArrowLeftOutlined, SearchOutlined, CopyOutlined } from "@ant-design/icons";
+import { Form, Input, Button, Card, InputNumber, message, Space, Modal, List, Spin, Switch, Radio, Divider, Tag } from "antd";
+import { SettingOutlined, ArrowLeftOutlined, SearchOutlined, CopyOutlined, ApiOutlined, CheckCircleOutlined, CloseCircleOutlined, LoadingOutlined } from "@ant-design/icons";
+import { invoke } from "@tauri-apps/api/core";
 import { useState, useEffect } from "react";
 import type { AppConfig } from "../types";
 import { feishuApi } from "../utils/feishuApi";
@@ -21,6 +22,8 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
   const [chatModalVisible, setChatModalVisible] = useState(false);
   const [chatList, setChatList] = useState<ChatItem[]>([]);
   const [chatListLoading, setChatListLoading] = useState(false);
+  const [mcpTesting, setMcpTesting] = useState(false);
+  const [mcpConnectionStatus, setMcpConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
 
   // 加载已保存的配置到表单
   useEffect(() => {
@@ -56,6 +59,11 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
       claudeProjectDir: values.claudeProjectDir || ".",
       cmdPrefix: values.cmdPrefix || "claude:",
       pollInterval: values.pollInterval || 5,
+      mcp: values.mcp || {
+        enabled: false,
+        transport: 'http',
+        httpUrl: 'http://localhost:8081',
+      },
     };
     localStorage.setItem("feishu-claude-config", JSON.stringify(currentConfig));
 
@@ -94,6 +102,46 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
     message.success("已复制到剪贴板");
   };
 
+  const handleTestMcpConnection = async () => {
+    const values = form.getFieldsValue();
+    const mcpEnabled = values.mcp?.enabled ?? false;
+    const httpUrl = values.mcp?.httpUrl ?? "http://localhost:8081";
+
+    if (!mcpEnabled) {
+      message.warning("请先启用 MCP");
+      return;
+    }
+
+    setMcpTesting(true);
+    setMcpConnectionStatus('connecting');
+
+    try {
+      // 调用后端 mcp_connect 命令（待实现）
+      await invoke('mcp_connect', { url: httpUrl });
+      message.success("MCP 连接测试成功");
+      setMcpConnectionStatus('connected');
+    } catch (error) {
+      console.error("MCP 连接测试失败:", error);
+      message.error(`MCP 连接测试失败: ${error}`);
+      setMcpConnectionStatus('error');
+    } finally {
+      setMcpTesting(false);
+    }
+  };
+
+  const renderMcpConnectionStatus = () => {
+    switch (mcpConnectionStatus) {
+      case 'connected':
+        return <Tag icon={<CheckCircleOutlined />} color="success">已连接</Tag>;
+      case 'connecting':
+        return <Tag icon={<LoadingOutlined />} color="processing">连接中...</Tag>;
+      case 'error':
+        return <Tag icon={<CloseCircleOutlined />} color="error">连接失败</Tag>;
+      default:
+        return <Tag color="default">未连接</Tag>;
+    }
+  };
+
   return (
     <div className="config-page">
       <Card
@@ -112,6 +160,11 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
             cmdPrefix: "claude:",
             pollInterval: 5,
             claudeProjectDir: ".",
+            mcp: {
+              enabled: false,
+              transport: 'http',
+              httpUrl: 'http://localhost:8081',
+            },
           }}
         >
           <Form.Item
@@ -178,6 +231,65 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
             label="轮询间隔（秒）"
           >
             <InputNumber min={1} max={60} style={{ width: "100%" }} />
+          </Form.Item>
+
+          <Divider orientation="left">
+            <ApiOutlined /> MCP 设置
+          </Divider>
+
+          <Form.Item
+            name={['mcp', 'enabled']}
+            label="启用 MCP"
+            valuePropName="checked"
+          >
+            <Switch />
+          </Form.Item>
+
+          <Form.Item noStyle shouldUpdate={(prev, curr) => prev.mcp?.enabled !== curr.mcp?.enabled}>
+            {({ getFieldValue }) => {
+              const mcpEnabled = getFieldValue(['mcp', 'enabled']);
+              return mcpEnabled ? (
+                <>
+                  <Form.Item
+                    name={['mcp', 'transport']}
+                    label="传输方式"
+                  >
+                    <Radio.Group>
+                      <Radio.Button value="http">HTTP</Radio.Button>
+                      <Radio.Button value="stdio">STDIO</Radio.Button>
+                    </Radio.Group>
+                  </Form.Item>
+
+                  <Form.Item noStyle shouldUpdate={(prev, curr) => prev.mcp?.transport !== curr.mcp?.transport}>
+                    {({ getFieldValue }) => {
+                      const transport = getFieldValue(['mcp', 'transport']);
+                      return transport === 'http' ? (
+                        <Form.Item
+                          name={['mcp', 'httpUrl']}
+                          label="服务器地址"
+                          rules={[{ required: true, message: "请输入服务器地址" }]}
+                          extra={
+                            <Space>
+                              <Button
+                                type="primary"
+                                size="small"
+                                loading={mcpTesting}
+                                onClick={handleTestMcpConnection}
+                              >
+                                测试连接
+                              </Button>
+                              {renderMcpConnectionStatus()}
+                            </Space>
+                          }
+                        >
+                          <Input placeholder="http://localhost:8081" />
+                        </Form.Item>
+                      ) : null;
+                    }}
+                  </Form.Item>
+                </>
+              ) : null;
+            }}
           </Form.Item>
 
           <Form.Item>

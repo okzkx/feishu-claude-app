@@ -1,3 +1,9 @@
+export interface McpConfig {
+  enabled: boolean;
+  transport: 'http' | 'stdio';
+  httpUrl: string;
+}
+
 export interface AppConfig {
   feishuAppId: string;
   feishuAppSecret: string;
@@ -6,6 +12,7 @@ export interface AppConfig {
   claudeProjectDir: string;
   cmdPrefix: string;
   pollInterval: number;
+  mcp: McpConfig;
 }
 
 export interface Message {
