@@ -95,11 +95,10 @@ impl McpClient {
         &self.config
     }
 
-    /// 清除全局会话记忆
-    /// 返回 (删除的文件数, 删除的目录数)
-    pub async fn clear_memory(&self) -> Result<(u32, u32), McpError> {
-        let transport = self.transport.lock().await;
-        transport.clear_global_session()
+    /// 设置清除记忆标志
+    /// 下次执行时不使用 --continue，开启全新会话
+    pub fn clear_memory(&self) {
+        StdioTransport::set_clear_memory();
     }
 }
 
@@ -163,9 +162,11 @@ impl McpClientManager {
         client.config().clone()
     }
 
-    pub async fn clear_memory(&self) -> Result<(u32, u32), McpError> {
-        let client = self.client.lock().await;
-        client.clear_memory().await
+    /// 设置清除记忆标志
+    /// 下次执行时不使用 --continue，开启全新会话
+    pub fn clear_memory(&self) {
+        // 直接调用静态方法，不需要锁
+        StdioTransport::set_clear_memory();
     }
 }
 

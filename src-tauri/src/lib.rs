@@ -208,18 +208,13 @@ async fn mcp_disconnect(
 }
 
 // 清除 Claude 记忆
+// 简化方案：设置标志，下次执行时不使用 --continue，开启全新会话
 #[tauri::command]
-async fn clear_claude_memory(
+fn clear_claude_memory(
     state: tauri::State<'_, AppState>,
 ) -> Result<String, String> {
-    let (files, dirs) = state.mcp_client.clear_memory().await
-        .map_err(|e| format!("清除记忆失败: {}", e))?;
-
-    if files > 0 || dirs > 0 {
-        Ok(format!("已删除 {} 个会话文件和 {} 个会话目录", files, dirs))
-    } else {
-        Ok("没有找到需要清除的记忆文件".to_string())
-    }
+    state.mcp_client.clear_memory();
+    Ok("已设置清除记忆标志，下次对话将开启全新会话".to_string())
 }
 
 // 执行 Claude 命令

@@ -52,6 +52,7 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
   const [mcpStatus, setMcpStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const [mcpNotified, setMcpNotified] = useState(false); // 是否已通知用户 MCP 断开
   const [mcpConnecting, setMcpConnecting] = useState(false); // MCP 连接中状态
+  const [clearingMemory, setClearingMemory] = useState(false); // 清除记忆中状态
 
   // 使用 ref 解决事件监听器中的闭包问题
   // 事件监听器调用 pollMessages 时，需要获取最新的值，而不是闭包中捕获的旧值
@@ -156,6 +157,65 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
         .catch(console.error);
     }
 
+    // 自动启动逻辑：如果 MCP 启用且配置完整，自动连接并启动轮询
+    const autoStart = async () => {
+      // 检查配置是否完整
+      if (!config.feishuAppId || !config.feishuAppSecret || !config.feishuChatId) {
+        console.log("[AutoStart] 配置不完整，跳过自动启动");
+        return;
+      }
+
+      // 检查是否已经在运行
+      const isRunning = await invoke<boolean>("is_polling_running");
+      if (isRunning) {
+        console.log("[AutoStart] 轮询已在运行中");
+        setIsRunning(true);
+        return;
+      }
+
+      console.log("[AutoStart] 开始自动启动...");
+
+      // 1. 如果 MCP 启用，先连接 MCP
+      if (config.mcp?.enabled) {
+        try {
+          setMcpStatus('connecting');
+          await invoke("mcp_connect");
+          setMcpStatus('connected');
+          console.log("[AutoStart] MCP 连接成功");
+        } catch (error) {
+          console.error("[AutoStart] MCP 连接失败:", error);
+          setMcpStatus('error');
+          // MCP 连接失败不阻止轮询启动
+        }
+      }
+
+      // 2. 启动轮询
+      try {
+        setIsRunning(true);
+        message.success("应用已自动启动");
+
+        // 发送启动通知
+        feishuApi.sendMessage(
+          `Claude 机器人已自动启动！\n指令格式：${config?.cmdPrefix}你的指令`
+        ).catch(console.error);
+
+        // start_polling 是阻塞的，不等待它完成
+        invoke("start_polling").catch((error) => {
+          console.error("[AutoStart] 轮询错误:", error);
+          if (!String(error).includes("已在运行")) {
+            setIsRunning(false);
+            message.error(`轮询异常: ${error}`);
+          }
+        });
+      } catch (error) {
+        setIsRunning(false);
+        console.error("[AutoStart] 启动失败:", error);
+      }
+    };
+
+    // 延迟 1 秒后自动启动，确保配置已加载
+    const autoStartTimer = setTimeout(autoStart, 1000);
+
     // 存储所有取消监听函数
     const unlistenFns: Promise<() => void>[] = [];
 
@@ -233,6 +293,8 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     );
 
     return () => {
+      // 清理自动启动定时器
+      clearTimeout(autoStartTimer);
       // 清理所有事件监听器
       unlistenFns.forEach((fn) => fn.then((f) => f()));
     };
@@ -325,22 +387,27 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     }
   };
 
-  const handleClearMemory = async () => {
-    Modal.confirm({
-      title: '确认清除记忆',
-      content: '这将删除 Claude 的所有对话记忆，此操作不可恢复。确定要继续吗？',
-      okText: '确认清除',
-      cancelText: '取消',
-      okButtonProps: { danger: true },
-      onOk: async () => {
-        try {
-          const result = await invoke<string>("clear_claude_memory");
-          message.success(result);
-        } catch (error) {
-          message.error(`清除失败: ${error}`);
-        }
-      },
-    });
+  const [clearMemoryModalOpen, setClearMemoryModalOpen] = useState(false);
+
+  const handleClearMemory = () => {
+    console.log('[Clear Memory] Button clicked');
+    setClearMemoryModalOpen(true);
+  };
+
+  const handleClearMemoryConfirm = async () => {
+    console.log('[Clear Memory] User confirmed');
+    setClearingMemory(true);
+    try {
+      const result = await invoke<string>("clear_claude_memory");
+      console.log('[Clear Memory] Result:', result);
+      message.success(result || '已设置清除记忆标志');
+      setClearMemoryModalOpen(false);
+    } catch (error) {
+      console.error('[Clear Memory] Error:', error);
+      message.error(`设置清除标志失败: ${error}`);
+    } finally {
+      setClearingMemory(false);
+    }
   };
 
   const handleMcpConnect = async () => {
@@ -586,11 +653,26 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
                 danger
                 icon={<StopOutlined />}
                 onClick={handleClearMemory}
+                loading={clearingMemory}
               >
                 清除记忆
               </Button>
             </Tooltip>
           </Space>
+
+          {/* 清除记忆确认对话框 */}
+          <Modal
+            title="确认清除记忆"
+            open={clearMemoryModalOpen}
+            onOk={handleClearMemoryConfirm}
+            onCancel={() => setClearMemoryModalOpen(false)}
+            okText="确认清除"
+            cancelText="取消"
+            okButtonProps={{ danger: true, loading: clearingMemory }}
+          >
+            <p>下次对话将开启全新会话，Claude 将不再记得之前的对话内容。</p>
+            <p>确定要继续吗？</p>
+          </Modal>
 
           {/* 刷新状态提示 */}
           {refreshing && (

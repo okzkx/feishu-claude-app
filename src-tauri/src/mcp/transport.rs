@@ -1,74 +1,23 @@
 use super::types::McpError;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::{Child, Command};
-use uuid::Uuid;
-use sha2::{Sha256, Digest};
 
-/// 基于 chat_id 生成确定性的 UUID（SHA-256 哈希）
-/// 这样即使应用重启，也能根据 chat_id 计算出相同的 session_id
-fn session_id_from_chat_id(chat_id: &str) -> Uuid {
-    let mut hasher = Sha256::new();
-    hasher.update(chat_id.as_bytes());
-    let hash = hasher.finalize();
-    // 使用哈希的前 16 字节创建 UUID (v5 风格)
-    Uuid::from_slice(&hash[..16]).unwrap_or_else(|_| Uuid::new_v4())
+/// 清除记忆标志：下次执行时不使用 --continue，开启全新会话
+static SHOULD_CLEAR_MEMORY: AtomicBool = AtomicBool::new(false);
+
+/// 设置清除记忆标志（下次执行时不使用 --continue）
+pub fn set_clear_memory_flag() {
+    SHOULD_CLEAR_MEMORY.store(true, Ordering::SeqCst);
+    println!("[MCP DEBUG] Clear memory flag set - next execution will start fresh session");
 }
 
-/// 生成固定的全局会话 UUID（用于永久记忆）
-/// 基于 "feishu-claude-app-global-session" 字符串的 SHA-256 哈希
-fn get_global_session_id() -> Uuid {
-    let mut hasher = Sha256::new();
-    hasher.update(b"feishu-claude-app-global-session");
-    let hash = hasher.finalize();
-    Uuid::from_slice(&hash[..16]).unwrap_or_else(|_| Uuid::new_v4())
-}
-
-/// 获取 Claude 会话文件路径
-/// 会话文件存储在 ~/.claude/projects/<escaped-cwd>/<session-id>.jsonl
-fn get_session_file_path(session_id: &Uuid, working_dir: &PathBuf) -> PathBuf {
-    // 获取用户主目录
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-
-    // 转义工作目录路径（Claude 使用特定格式）
-    // Claude CLI 的转义规则：将所有路径分隔符和冒号替换为单个连字符
-    let escaped_cwd = working_dir
-        .to_string_lossy()
-        .replace(':', "-")
-        .replace('\\', "-")
-        .replace('/', "-");
-
-    // 构建会话文件路径
-    let path = home.join(".claude")
-        .join("projects")
-        .join(&escaped_cwd)
-        .join(format!("{}.jsonl", session_id));
-
-    println!("[MCP DEBUG] get_session_file_path:");
-    println!("[MCP DEBUG]   - working_dir: {:?}", working_dir);
-    println!("[MCP DEBUG]   - escaped_cwd: {}", escaped_cwd);
-    println!("[MCP DEBUG]   - session_id: {}", session_id);
-    println!("[MCP DEBUG]   - full path: {:?}", path);
-
-    path
-}
-
-/// 检查会话文件是否存在于磁盘上
-fn session_exists_on_disk(session_id: &Uuid, working_dir: &PathBuf) -> bool {
-    let session_file = get_session_file_path(session_id, working_dir);
-    let exists = session_file.exists();
-    println!("[MCP DEBUG] Checking session file: {:?}, exists: {}", session_file, exists);
-    exists
-}
-
-/// STDIO 传输层（每次调用模式，支持会话）
+/// STDIO 传输层（每次调用模式，使用 --continue 自动恢复会话）
 pub struct StdioTransport {
     _process: Option<Child>,
     working_dir: PathBuf,
-    /// 会话存储：session_key -> session_id
-    session_store: HashMap<String, Uuid>,
 }
 
 impl StdioTransport {
@@ -77,7 +26,6 @@ impl StdioTransport {
         Self {
             _process: None,
             working_dir: PathBuf::from(working_dir),
-            session_store: HashMap::new(),
         }
     }
 
@@ -158,30 +106,35 @@ impl StdioTransport {
     }
 
     /// 执行单次命令
-    /// 始终使用全局会话 ID，保持永久记忆
+    /// 简化方案：不使用任何 session 参数，让 Claude CLI 自动管理会话
+    /// 这样可以避免 "Session ID already in use" 等错误
+    /// 使用 --continue 参数让 Claude 自动继续上次会话（如果存在）
+    /// 如果设置了清除记忆标志，则不使用 --continue，开启全新会话
     pub async fn execute(&mut self, command: &str, _session_key: Option<&str>) -> Result<String, McpError> {
         println!("[MCP DEBUG] Executing command: {}", command);
 
-        // 始终使用全局会话 ID（永久记忆模式）
-        let session_id = get_global_session_id();
+        // 检查是否需要清除记忆（开启新会话）
+        let should_clear = SHOULD_CLEAR_MEMORY.swap(false, Ordering::SeqCst);
 
-        // 检查磁盘上是否存在会话文件
-        let exists_on_disk = session_exists_on_disk(&session_id, &self.working_dir);
-        let is_new_session = !exists_on_disk;
-
-        if is_new_session {
-            println!("[MCP DEBUG] Creating NEW global session, id: {}", session_id);
+        let args: Vec<&str> = if should_clear {
+            // 不使用 --continue，开启全新会话
+            println!("[MCP DEBUG] Starting FRESH session (clear memory mode)");
+            vec![
+                "/C", "claude", "-p",
+                "--output-format", "text",
+                "--dangerously-skip-permissions",
+                command
+            ]
         } else {
-            println!("[MCP DEBUG] RESUMING global session, id: {}", session_id);
-        }
-
-        // 构建命令参数
-        // 始终使用会话 ID，新会话用 --session-id，已存在用 --resume
-        let session_id_str = session_id.to_string();
-        let args: Vec<&str> = if is_new_session {
-            vec!["/C", "claude", "-p", "--output-format", "text", "--dangerously-skip-permissions", "--session-id", &session_id_str, command]
-        } else {
-            vec!["/C", "claude", "-p", "--output-format", "text", "--dangerously-skip-permissions", "--resume", &session_id_str, command]
+            // 使用 --continue 参数恢复上次会话（如果存在）
+            println!("[MCP DEBUG] Using --continue mode (auto-resume last session)");
+            vec![
+                "/C", "claude", "-p",
+                "--output-format", "text",
+                "--dangerously-skip-permissions",
+                "--continue",
+                command
+            ]
         };
 
         // 在 Windows 上使用 cmd.exe 来执行 claude
@@ -203,14 +156,14 @@ impl StdioTransport {
         #[cfg(not(target_os = "windows"))]
         let mut child = {
             let mut cmd = Command::new("claude");
-            cmd.args(["-p", "--output-format", "text", "--dangerously-skip-permissions"]);
-            if is_new_session {
-                cmd.arg("--session-id").arg(session_id.to_string());
+            if should_clear {
+                cmd.args(["-p", "--output-format", "text", "--dangerously-skip-permissions"])
+                    .arg(command);
             } else {
-                cmd.arg("--resume").arg(session_id.to_string());
+                cmd.args(["-p", "--output-format", "text", "--dangerously-skip-permissions", "--continue"])
+                    .arg(command);
             }
-            cmd.arg(command)
-                .current_dir(&self.working_dir)
+            cmd.current_dir(&self.working_dir)
                 .env("CLAUDECODE", "")
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -279,76 +232,9 @@ impl StdioTransport {
         println!("[MCP DEBUG] Stop called (no-op for per-call mode)");
     }
 
-    /// 清除全局会话文件（删除记忆）
-    /// 由于全局会话可能在不同的 working_dir 目录下创建，需要搜索所有项目目录
-    /// 返回删除的文件和目录数量
-    pub fn clear_global_session(&self) -> Result<(u32, u32), McpError> {
-        let session_id = get_global_session_id();
-        let session_filename = format!("{}.jsonl", session_id);
-        let session_dirname = session_id.to_string();
-
-        println!("[MCP DEBUG] Clear memory - looking for global session files");
-        println!("[MCP DEBUG] Global session ID: {}", session_id);
-        println!("[MCP DEBUG] Looking for files named: {}", session_filename);
-
-        // 获取 Claude projects 目录
-        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-        let projects_dir = home.join(".claude").join("projects");
-
-        println!("[MCP DEBUG] Projects directory: {:?}", projects_dir);
-
-        let mut deleted_files = 0;
-        let mut deleted_dirs = 0;
-
-        if projects_dir.exists() {
-            // 遍历所有项目目录
-            if let Ok(project_entries) = std::fs::read_dir(&projects_dir) {
-                for project_entry in project_entries.flatten() {
-                    let project_path = project_entry.path();
-                    if project_path.is_dir() {
-                        // 删除会话文件 (.jsonl)
-                        let session_file = project_path.join(&session_filename);
-                        println!("[MCP DEBUG] Checking file: {:?}", session_file);
-
-                        if session_file.exists() {
-                            match std::fs::remove_file(&session_file) {
-                                Ok(_) => {
-                                    println!("[MCP DEBUG] Deleted file: {:?}", session_file);
-                                    deleted_files += 1;
-                                }
-                                Err(e) => {
-                                    println!("[MCP DEBUG] Failed to delete file {:?}: {}", session_file, e);
-                                }
-                            }
-                        }
-
-                        // 删除会话目录（同名目录可能包含额外的会话数据）
-                        let session_dir = project_path.join(&session_dirname);
-                        if session_dir.exists() && session_dir.is_dir() {
-                            println!("[MCP DEBUG] Checking dir: {:?}", session_dir);
-                            match std::fs::remove_dir_all(&session_dir) {
-                                Ok(_) => {
-                                    println!("[MCP DEBUG] Deleted directory: {:?}", session_dir);
-                                    deleted_dirs += 1;
-                                }
-                                Err(e) => {
-                                    println!("[MCP DEBUG] Failed to delete directory {:?}: {}", session_dir, e);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            println!("[MCP DEBUG] Projects directory does not exist!");
-        }
-
-        if deleted_files > 0 || deleted_dirs > 0 {
-            println!("[MCP DEBUG] Deleted {} session file(s) and {} session directorie(s)", deleted_files, deleted_dirs);
-        } else {
-            println!("[MCP DEBUG] No global session files found to delete");
-        }
-
-        Ok((deleted_files, deleted_dirs))
+    /// 设置清除记忆标志
+    /// 下次执行时不使用 --continue，开启全新会话
+    pub fn set_clear_memory() {
+        set_clear_memory_flag();
     }
 }
