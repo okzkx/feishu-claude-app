@@ -154,7 +154,8 @@ export class FeishuApi {
         params: {
           container_id_type: "chat",
           container_id: this.config.feishuChatId,
-          page_size: pageSize,
+          page_size: 20,
+          sort_type: "ByCreateTimeDesc", // 按时间降序，最新消息在前
         },
       }
     );
@@ -167,13 +168,23 @@ export class FeishuApi {
     }
 
     // 飞书消息列表的 items 在 data.items 中
-    const messageItems = data?.items || [];
+    let messageItems = data?.items || [];
+
+    // 按时间倒序排序（最新在前）
+    messageItems = messageItems.sort((a: any, b: any) =>
+      parseInt(b.create_time) - parseInt(a.create_time)
+    );
+
+    console.log("getMessages: 排序后第一条消息时间", messageItems[0]?.create_time, "最后一条", messageItems[messageItems.length-1]?.create_time);
 
     // 转换为统一格式
     return messageItems.map((item: any) => ({
       messageId: item.message_id,
       chatId: item.chat_id,
       senderId: item.sender?.id || "",
+      senderName: item.sender?.sender_type === 'user' ? '用户' :
+                 item.sender?.sender_type === 'app' ? '机器人' : '系统',
+      senderType: item.sender?.sender_type || 'unknown',
       content: this.parseContent(item.body?.content || ""),
       msgType: item.msg_type,
       createTime: parseInt(item.create_time) / 1000, // 转换为秒级时间戳

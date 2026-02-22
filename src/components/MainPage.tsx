@@ -33,6 +33,7 @@ interface MainPageProps {
 const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
   const [isRunning, setIsRunning] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [recentMessages, setRecentMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [testCommand, setTestCommand] = useState("");
 
@@ -67,6 +68,9 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     try {
       const msgs = await feishuApi.getMessages();
       console.log("pollMessages: 获取到消息", msgs.length, "条");
+
+      // 显示最近10条文本消息
+      setRecentMessages(msgs.filter(m => m.msgType === 'text').slice(0, 10));
 
       for (const msg of msgs) {
         console.log("pollMessages: 处理消息", msg.messageId, msg.msgType, msg.content?.substring(0, 50));
@@ -219,6 +223,25 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     failed: "失败",
   };
 
+  // 格式化时间
+  const formatTime = (timestamp: number) => {
+    const date = new Date(timestamp * 1000);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+
+    if (minutes < 1) return '刚刚';
+    if (minutes < 60) return `${minutes}分钟前`;
+    if (hours < 24) return `${hours}小时前`;
+    return date.toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
   return (
     <div className="main-page">
       <Card
@@ -283,6 +306,43 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
                 执行
               </Button>
             </Space.Compact>
+          </Card>
+
+          <Divider />
+
+          {/* 最近消息 */}
+          <Card size="small" title={`最近消息 (${recentMessages.length})`}>
+            <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+              {recentMessages.length === 0 ? (
+                <Text type="secondary">暂无消息</Text>
+              ) : (
+                recentMessages.map((item) => (
+                  <div
+                    key={item.messageId}
+                    style={{
+                      padding: '12px 0',
+                      borderBottom: '1px solid #f0f0f0',
+                    }}
+                  >
+                    {/* 头部：用户名 + 时间 */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Space>
+                        <Tag color={item.senderType === 'user' ? 'green' : 'blue'}>
+                          {item.senderName || '未知'}
+                        </Tag>
+                      </Space>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {formatTime(item.createTime)}
+                      </Text>
+                    </div>
+                    {/* 消息内容 */}
+                    <div style={{ paddingLeft: 8 }}>
+                      <Text>{item.content || '(无内容)'}</Text>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </Card>
 
           <Divider />

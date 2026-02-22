@@ -38,6 +38,7 @@ function buildURL(url: string, params?: Record<string, unknown>): string {
 export const createTauriAdapter = (): AxiosAdapter => {
   return async (config) => {
     console.log("TauriAdapter: config.params", config.params);
+    console.log("TauriAdapter: config.url", config.url);
 
     let url = config.url!;
     if (config.baseURL && !url.startsWith("http")) {
@@ -63,6 +64,7 @@ export const createTauriAdapter = (): AxiosAdapter => {
       }
     }
 
+    console.log("TauriAdapter: 最终 URL", url);
     console.log("TauriAdapter: 请求", method, url);
 
     try {

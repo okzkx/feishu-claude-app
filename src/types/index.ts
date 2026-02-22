@@ -13,6 +13,7 @@ export interface Message {
   chatId: string;
   senderId: string;
   senderName?: string;
+  senderType?: string;
   content: string;
   msgType: string;
   createTime: number;
