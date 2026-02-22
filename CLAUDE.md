@@ -18,6 +18,7 @@
 3. 指令转发至 Claude MCP 执行
 4. 执行结果回传飞书
 5. **连续对话（永久记忆）**
+6. **记忆清除功能**
 
 ---
 
@@ -41,6 +42,8 @@ feishu-claude-app/
 │   │   │   ├── client.rs   # MCP 客户端
 │   │   │   └── types.rs    # 类型定义
 │   └── capabilities/       # Tauri 权限配置
+├── docs/                   # 技术文档
+│   └── session-persistence-report.md
 └── .claude/                # Claude Code 配置
     ├── agents/             # Agent 配置
     │   ├── claude-cli-researcher.md
@@ -54,37 +57,61 @@ feishu-claude-app/
 
 ## 已解决问题
 
-### 2026-02-23: 连续对话功能（永久记忆）
+### 2026-02-23: 简化会话管理（最终方案）
 
-**问题**: 每次对话都是新的开始，Claude 无法记住之前的对话内容
+**问题**: 之前的 session ID 管理方案过于复杂，容易产生冲突
 
-**解决方案**: 全局永久记忆模式
-- 使用固定的全局 session ID（SHA-256 哈希）
-- 检查磁盘会话文件决定创建/恢复会话
-- 添加 `--dangerously-skip-permissions` 绕过权限
+**最终解决方案**: 使用 `--continue` + 标志位
+- 正常执行：使用 `--continue` 自动恢复最近会话
+- 清除记忆：设置标志，下次不使用 `--continue`，开启新会话
 
 **核心代码** (`src-tauri/src/mcp/transport.rs`):
 ```rust
-// 全局会话 ID 生成
-fn get_global_session_id() -> Uuid {
-    let mut hasher = Sha256::new();
-    hasher.update(b"feishu-claude-app-global-session");
-    let hash = hasher.finalize();
-    Uuid::from_slice(&hash[..16]).unwrap_or_else(|_| Uuid::new_v4())
+// 静态标志控制清除记忆
+static SHOULD_CLEAR_MEMORY: AtomicBool = AtomicBool::new(false);
+
+pub fn set_clear_memory_flag() {
+    SHOULD_CLEAR_MEMORY.store(true, Ordering::SeqCst);
 }
 
-// 检查磁盘会话文件
-fn session_exists_on_disk(session_id: &Uuid, working_dir: &PathBuf) -> bool {
-    let session_file = get_session_file_path(session_id, working_dir);
-    session_file.exists()
-}
+// 执行时检查标志
+let should_clear = SHOULD_CLEAR_MEMORY.swap(false, Ordering::SeqCst);
+let args = if should_clear {
+    // 不使用 --continue，开启新会话
+    vec!["claude", "-p", "--dangerously-skip-permissions", command]
+} else {
+    // 使用 --continue 恢复最近会话
+    vec!["claude", "-p", "--dangerously-skip-permissions", "--continue", command]
+};
 ```
 
-**依赖添加** (`Cargo.toml`):
-```toml
-uuid = { version = "1", features = ["v4", "v5"] }
-sha2 = "0.10"
-dirs = "5"
+**优势**:
+- 无需管理 session ID
+- 无需额外依赖（移除了 uuid, sha2, dirs）
+- 代码简洁，逻辑清晰
+
+---
+
+### 2026-02-23: 清除记忆按钮无响应
+
+**问题**: 点击清除记忆按钮没有任何反馈
+
+**解决方案**:
+- 使用声明式 `<Modal>` 组件替代 `Modal.confirm` 方法
+- 添加 `clearingMemory` 状态显示 loading
+
+```tsx
+const [clearMemoryModalOpen, setClearMemoryModalOpen] = useState(false);
+
+<Modal
+  title="确认清除记忆"
+  open={clearMemoryModalOpen}
+  onOk={handleClearMemoryConfirm}
+  onCancel={() => setClearMemoryModalOpen(false)}
+  okButtonProps={{ danger: true, loading: clearingMemory }}
+>
+  下次对话将开启全新会话...
+</Modal>
 ```
 
 ---
@@ -110,15 +137,16 @@ dirs = "5"
 
 ## 关键代码模式
 
-### Tauri HTTP 适配器 (src/utils/http.ts)
-```typescript
-// 重试配置
-const retryConfig = {
-  maxRetries: 3,
-  baseDelay: 1000,
-  maxDelay: 10000,
-  retryStatusCodes: [429, 500, 502, 503, 504],
-};
+### 会话管理 (src-tauri/src/mcp/transport.rs)
+```rust
+// 使用 --continue 自动恢复会话
+let args = vec![
+    "/C", "claude", "-p",
+    "--output-format", "text",
+    "--dangerously-skip-permissions",
+    "--continue",  // 关键：自动恢复最近会话
+    command
+];
 ```
 
 ### 消息拉取 (src/components/MainPage.tsx)
@@ -130,11 +158,9 @@ const isFirstPollRef = useRef(true);
 // 在 useCallback 中使用 ref.current
 const pollMessages = useCallback(async () => {
   if (isFirstPollRef.current) {
-    // 首次拉取逻辑
     lastMessageIdRef.current = msgs[0].messageId;
     isFirstPollRef.current = false;
   } else {
-    // 增量拉取逻辑
     if (msgs[0].messageId !== lastMessageIdRef.current) {
       // 处理新消息
     }
@@ -176,3 +202,19 @@ npx tsc --noEmit
 ### 域名权限
 - `https://open.feishu.cn/**`
 - `https://open.larkoffice.com/**`
+
+---
+
+## Agent 和 Skill 资源
+
+### Agents
+| Agent | 用途 |
+|-------|------|
+| claude-cli-researcher | 研究 Claude CLI 参数和会话机制 |
+| session-persistence-specialist | 解决会话持久化问题 |
+
+### Skills
+| Skill | 用途 |
+|-------|------|
+| claude-session-management | Claude 会话管理技术 |
+| permanent-memory | 永久记忆实现方案 |
