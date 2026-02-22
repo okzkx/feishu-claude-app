@@ -63,56 +63,41 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
       // 显示最近10条文本消息
       setRecentMessages(msgs.filter(m => m.msgType === 'text').slice(0, 10));
 
-      for (const msg of msgs) {
+      // 找到最新一条非机器人消息
+      const latestNonBotMessage = msgs.find(m =>
+        m.msgType === 'text' &&
+        m.senderType !== 'app'  // 非机器人
+      );
+
+      if (latestNonBotMessage) {
         // 检查是否已处理
         const processed = await invoke<boolean>("is_message_processed", {
-          messageId: msg.messageId,
+          messageId: latestNonBotMessage.messageId,
         });
 
-        if (processed) continue;
+        if (!processed) {
+          // 标记已处理
+          await invoke("mark_message_processed", {
+            messageId: latestNonBotMessage.messageId
+          });
 
-        // 过滤：只处理文本消息
-        if (msg.msgType !== "text") continue;
+          // 更新消息列表显示处理中
+          setMessages((prev) => [
+            { ...latestNonBotMessage, status: "processing" },
+            ...prev,
+          ]);
 
-        // 过滤：只处理我的消息
-        if (!feishuApi.isMyMessage(msg.senderId)) continue;
+          // 原样转发给 Claude MCP
+          const result = await invoke<TaskResult>("execute_claude", {
+            command: latestNonBotMessage.content,
+          });
 
-        // 检查命令前缀
-        const prefix = feishuApi.getCmdPrefix();
-        if (!msg.content?.startsWith(prefix)) continue;
-
-        // 提取命令
-        const command = msg.content.slice(prefix.length).trim();
-        if (!command) continue;
-
-        // 标记已处理
-        await invoke("mark_message_processed", { messageId: msg.messageId });
-
-        // 更新消息列表
-        setMessages((prev) => [
-          { ...msg, status: "processing", content: command },
-          ...prev,
-        ]);
-
-        // 发送确认
-        await feishuApi.sendMessage(`收到指令：\n${command}\n正在执行...`);
-
-        // 执行 Claude
-        const result = await invoke<TaskResult>("execute_claude", { command });
-
-        // 推送结果
-        if (result.success) {
-          await feishuApi.sendMessage(`执行完成：\n${result.output}`);
+          // 更新消息状态
           setMessages((prev) =>
             prev.map((m) =>
-              m.messageId === msg.messageId ? { ...m, status: "completed" } : m
-            )
-          );
-        } else {
-          await feishuApi.sendMessage(`执行失败：\n${result.output}`);
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.messageId === msg.messageId ? { ...m, status: "failed" } : m
+              m.messageId === latestNonBotMessage.messageId
+                ? { ...m, status: result.success ? "completed" : "failed" }
+                : m
             )
           );
         }
