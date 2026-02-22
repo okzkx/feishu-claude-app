@@ -5,6 +5,17 @@ use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::{Child, Command};
 use uuid::Uuid;
+use sha2::{Sha256, Digest};
+
+/// 基于 chat_id 生成确定性的 UUID（SHA-256 哈希）
+/// 这样即使应用重启，也能根据 chat_id 计算出相同的 session_id
+fn session_id_from_chat_id(chat_id: &str) -> Uuid {
+    let mut hasher = Sha256::new();
+    hasher.update(chat_id.as_bytes());
+    let hash = hasher.finalize();
+    // 使用哈希的前 16 字节创建 UUID (v5 风格)
+    Uuid::from_slice(&hash[..16]).unwrap_or_else(|_| Uuid::new_v4())
+}
 
 /// STDIO 传输层（每次调用模式，支持会话）
 pub struct StdioTransport {
@@ -101,24 +112,26 @@ impl StdioTransport {
     }
 
     /// 执行单次命令
-    /// session_key: 可选的会话键，用于保持会话连续性
+    /// session_key: 可选的会话键（通常是 chatId），用于保持会话连续性
     pub async fn execute(&mut self, command: &str, session_key: Option<&str>) -> Result<String, McpError> {
         println!("[MCP DEBUG] Executing command: {}", command);
 
-        // 获取或创建 session_id，并判断是否为新会话
+        // 基于 session_key 生成确定性的 session_id
+        // 这样即使应用重启，也能恢复之前的会话
         let (session_id, is_new_session) = match session_key {
             Some(key) => {
-                if let Some(existing_id) = self.session_store.get(key) {
-                    // 已存在的会话，使用 --resume 恢复
-                    println!("[MCP DEBUG] Resuming session key: {}, id: {}", key, existing_id);
-                    (*existing_id, false)
+                // 使用确定性 UUID（基于 chat_id 的 SHA-256 哈希）
+                let session_id = session_id_from_chat_id(key);
+                // 检查会话是否已存在于内存缓存中
+                let is_new = !self.session_store.contains_key(key);
+                if is_new {
+                    // 更新内存缓存
+                    self.session_store.insert(key.to_string(), session_id);
+                    println!("[MCP DEBUG] New deterministic session key: {}, id: {}", key, session_id);
                 } else {
-                    // 新会话，使用 --session-id 创建
-                    let new_id = Uuid::new_v4();
-                    self.session_store.insert(key.to_string(), new_id);
-                    println!("[MCP DEBUG] Creating new session key: {}, id: {}", key, new_id);
-                    (new_id, true)
+                    println!("[MCP DEBUG] Resuming deterministic session key: {}, id: {}", key, session_id);
                 }
+                (session_id, is_new)
             }
             None => (Uuid::nil(), false),
         };
