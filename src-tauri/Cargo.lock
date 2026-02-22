@@ -775,6 +775,7 @@ dependencies = [
  "tauri-plugin-store",
  "tokio",
  "tokio-stream",
+ "uuid",
 ]
 
 [[package]]

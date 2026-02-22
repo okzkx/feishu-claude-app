@@ -213,6 +213,7 @@ async fn execute_claude(
     app: AppHandle,
     state: tauri::State<'_, AppState>,
     command: String,
+    chat_id: Option<String>,
 ) -> Result<TaskResult, String> {
     app.emit("claude-status", "executing").ok();
 
@@ -246,8 +247,8 @@ async fn execute_claude(
         }
     }
 
-    // 通过 MCP 发送消息
-    match state.mcp_client.send_message(&command).await {
+    // 通过 MCP 发送消息（将 chat_id 作为 session_key）
+    match state.mcp_client.send_message(&command, chat_id.as_deref()).await {
         Ok(response) => {
             let result = TaskResult {
                 success: true,

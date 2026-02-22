@@ -1,13 +1,17 @@
 use super::types::McpError;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::{Child, Command};
+use uuid::Uuid;
 
-/// STDIO 传输层（每次调用模式）
+/// STDIO 传输层（每次调用模式，支持会话）
 pub struct StdioTransport {
     _process: Option<Child>,
     working_dir: PathBuf,
+    /// 会话存储：session_key -> session_id
+    session_store: HashMap<String, Uuid>,
 }
 
 impl StdioTransport {
@@ -16,6 +20,7 @@ impl StdioTransport {
         Self {
             _process: None,
             working_dir: PathBuf::from(working_dir),
+            session_store: HashMap::new(),
         }
     }
 
@@ -96,14 +101,36 @@ impl StdioTransport {
     }
 
     /// 执行单次命令
-    pub async fn execute(&mut self, command: &str) -> Result<String, McpError> {
+    /// session_key: 可选的会话键，用于保持会话连续性
+    pub async fn execute(&mut self, command: &str, session_key: Option<&str>) -> Result<String, McpError> {
         println!("[MCP DEBUG] Executing command: {}", command);
+
+        // 获取或创建 session_id
+        let session_id = match session_key {
+            Some(key) => {
+                let id = self.session_store
+                    .entry(key.to_string())
+                    .or_insert_with(Uuid::new_v4);
+                println!("[MCP DEBUG] Using session key: {}, id: {}", key, id);
+                Some(*id)
+            }
+            None => None,
+        };
+
+        // 构建命令参数
+        let session_id_str;
+        let args: Vec<&str> = if let Some(id) = session_id {
+            session_id_str = id.to_string();
+            vec!["/C", "claude", "-p", "--output-format", "text", "--session-id", &session_id_str, command]
+        } else {
+            vec!["/C", "claude", "-p", "--output-format", "text", command]
+        };
 
         // 在 Windows 上使用 cmd.exe 来执行 claude
         // 清除 CLAUDECODE 环境变量以避免嵌套会话检测
         #[cfg(target_os = "windows")]
         let mut child = Command::new("cmd")
-            .args(["/C", "claude", "-p", "--output-format", "text", command])
+            .args(&args)
             .current_dir(&self.working_dir)
             .env("CLAUDECODE", "")
             .stdout(Stdio::piped())
@@ -114,19 +141,25 @@ impl StdioTransport {
                 McpError::RequestFailed(format!("Failed to spawn claude: {}", e))
             })?;
 
+        // 非Windows平台的命令构建
         #[cfg(not(target_os = "windows"))]
-        let mut child = Command::new("claude")
-            .args(["-p", "--output-format", "text"])
-            .arg(command)
-            .current_dir(&self.working_dir)
-            .env("CLAUDECODE", "")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| {
-                println!("[MCP DEBUG] Failed to spawn claude: {}", e);
-                McpError::RequestFailed(format!("Failed to spawn claude: {}", e))
-            })?;
+        let mut child = {
+            let mut cmd = Command::new("claude");
+            cmd.args(["-p", "--output-format", "text"]);
+            if let Some(id) = session_id {
+                cmd.arg("--session-id").arg(id.to_string());
+            }
+            cmd.arg(command)
+                .current_dir(&self.working_dir)
+                .env("CLAUDECODE", "")
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| {
+                    println!("[MCP DEBUG] Failed to spawn claude: {}", e);
+                    McpError::RequestFailed(format!("Failed to spawn claude: {}", e))
+                })?
+        };
 
         println!("[MCP DEBUG] Process spawned for command execution");
 
@@ -184,5 +217,19 @@ impl StdioTransport {
     /// 停止（无操作，因为没有持久进程）
     pub async fn stop(&mut self) {
         println!("[MCP DEBUG] Stop called (no-op for per-call mode)");
+    }
+
+    /// 清除指定会话
+    pub fn clear_session(&mut self, session_key: &str) {
+        if let Some(id) = self.session_store.remove(session_key) {
+            println!("[MCP DEBUG] Cleared session: key={}, id={}", session_key, id);
+        }
+    }
+
+    /// 清除所有会话
+    pub fn clear_all_sessions(&mut self) {
+        let count = self.session_store.len();
+        self.session_store.clear();
+        println!("[MCP DEBUG] Cleared all {} sessions", count);
     }
 }

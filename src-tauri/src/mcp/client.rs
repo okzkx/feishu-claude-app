@@ -77,9 +77,9 @@ impl McpClient {
     }
 
     /// 执行命令
-    pub async fn send_message(&self, content: &str) -> Result<String, McpError> {
+    pub async fn send_message(&self, content: &str, session_key: Option<&str>) -> Result<String, McpError> {
         let mut transport = self.transport.lock().await;
-        transport.execute(content).await
+        transport.execute(content, session_key).await
     }
 
     /// 更新配置
@@ -141,9 +141,9 @@ impl McpClientManager {
         }
     }
 
-    pub async fn send_message(&self, content: &str) -> Result<String, McpError> {
+    pub async fn send_message(&self, content: &str, session_key: Option<&str>) -> Result<String, McpError> {
         let client = self.client.lock().await;
-        client.send_message(content).await
+        client.send_message(content, session_key).await
     }
 
     pub async fn update_config(&self, config: McpConfig) {

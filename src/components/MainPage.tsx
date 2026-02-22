@@ -115,6 +115,7 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
             // 原样转发给 Claude MCP
             const result = await invoke<TaskResult>("execute_claude", {
               command: newMsg.content,
+              chatId: newMsg.chatId,
             });
 
             // 更新消息状态

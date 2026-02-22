@@ -18,6 +18,7 @@ reqwest = { version = "0.12", features = ["json", "stream"] }
 tokio-stream = "0.1"
 futures = "0.3"
 chrono = "0.4"
+uuid = { version = "1", features = ["v4"] }
 
 [features]
 default = ["custom-protocol"]
