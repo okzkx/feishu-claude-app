@@ -96,7 +96,8 @@ impl McpClient {
     }
 
     /// 清除全局会话记忆
-    pub async fn clear_memory(&self) -> Result<(), McpError> {
+    /// 返回 (删除的文件数, 删除的目录数)
+    pub async fn clear_memory(&self) -> Result<(u32, u32), McpError> {
         let transport = self.transport.lock().await;
         transport.clear_global_session()
     }
@@ -162,7 +163,7 @@ impl McpClientManager {
         client.config().clone()
     }
 
-    pub async fn clear_memory(&self) -> Result<(), McpError> {
+    pub async fn clear_memory(&self) -> Result<(u32, u32), McpError> {
         let client = self.client.lock().await;
         client.clear_memory().await
     }

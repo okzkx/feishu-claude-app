@@ -51,6 +51,7 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
   const [testResult, setTestResult] = useState<{ success: boolean; output: string } | null>(null);
   const [mcpStatus, setMcpStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const [mcpNotified, setMcpNotified] = useState(false); // 是否已通知用户 MCP 断开
+  const [mcpConnecting, setMcpConnecting] = useState(false); // MCP 连接中状态
 
   // 使用 ref 解决事件监听器中的闭包问题
   // 事件监听器调用 pollMessages 时，需要获取最新的值，而不是闭包中捕获的旧值
@@ -333,13 +334,42 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
-          await invoke("clear_claude_memory");
-          message.success("记忆已清除");
+          const result = await invoke<string>("clear_claude_memory");
+          message.success(result);
         } catch (error) {
           message.error(`清除失败: ${error}`);
         }
       },
     });
+  };
+
+  const handleMcpConnect = async () => {
+    if (!config.mcp?.enabled) {
+      message.warning("请先在设置中启用 MCP");
+      return;
+    }
+
+    setMcpConnecting(true);
+    try {
+      await invoke("mcp_connect");
+      message.success("MCP 连接成功");
+    } catch (error) {
+      message.error(`MCP 连接失败: ${error}`);
+    } finally {
+      setMcpConnecting(false);
+    }
+  };
+
+  const handleMcpDisconnect = async () => {
+    setMcpConnecting(true);
+    try {
+      await invoke("mcp_disconnect");
+      message.success("MCP 已断开");
+    } catch (error) {
+      message.error(`MCP 断开失败: ${error}`);
+    } finally {
+      setMcpConnecting(false);
+    }
   };
 
   const statusColors: Record<string, string> = {
@@ -525,6 +555,32 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
                 手动刷新
               </Button>
             </Tooltip>
+            {/* MCP 连接控制 */}
+            {config.mcp?.enabled && (
+              mcpStatus === 'connected' ? (
+                <Tooltip title="断开 MCP 连接">
+                  <Button
+                    icon={<DisconnectOutlined />}
+                    onClick={handleMcpDisconnect}
+                    loading={mcpConnecting}
+                  >
+                    断开 MCP
+                  </Button>
+                </Tooltip>
+              ) : (
+                <Tooltip title={mcpStatus === 'connecting' ? "正在连接..." : "连接 MCP 服务"}>
+                  <Button
+                    type="default"
+                    icon={<ApiOutlined />}
+                    onClick={handleMcpConnect}
+                    loading={mcpConnecting || mcpStatus === 'connecting'}
+                    disabled={mcpStatus === 'connecting'}
+                  >
+                    连接 MCP
+                  </Button>
+                </Tooltip>
+              )
+            )}
             <Tooltip title="清除 Claude 的所有记忆">
               <Button
                 danger

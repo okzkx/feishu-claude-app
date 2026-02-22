@@ -33,6 +33,7 @@ fn get_session_file_path(session_id: &Uuid, working_dir: &PathBuf) -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
 
     // 转义工作目录路径（Claude 使用特定格式）
+    // Claude CLI 的转义规则：将所有路径分隔符和冒号替换为单个连字符
     let escaped_cwd = working_dir
         .to_string_lossy()
         .replace(':', "-")
@@ -40,10 +41,18 @@ fn get_session_file_path(session_id: &Uuid, working_dir: &PathBuf) -> PathBuf {
         .replace('/', "-");
 
     // 构建会话文件路径
-    home.join(".claude")
+    let path = home.join(".claude")
         .join("projects")
-        .join(escaped_cwd)
-        .join(format!("{}.jsonl", session_id))
+        .join(&escaped_cwd)
+        .join(format!("{}.jsonl", session_id));
+
+    println!("[MCP DEBUG] get_session_file_path:");
+    println!("[MCP DEBUG]   - working_dir: {:?}", working_dir);
+    println!("[MCP DEBUG]   - escaped_cwd: {}", escaped_cwd);
+    println!("[MCP DEBUG]   - session_id: {}", session_id);
+    println!("[MCP DEBUG]   - full path: {:?}", path);
+
+    path
 }
 
 /// 检查会话文件是否存在于磁盘上
@@ -271,18 +280,75 @@ impl StdioTransport {
     }
 
     /// 清除全局会话文件（删除记忆）
-    pub fn clear_global_session(&self) -> Result<(), McpError> {
+    /// 由于全局会话可能在不同的 working_dir 目录下创建，需要搜索所有项目目录
+    /// 返回删除的文件和目录数量
+    pub fn clear_global_session(&self) -> Result<(u32, u32), McpError> {
         let session_id = get_global_session_id();
-        let session_file = get_session_file_path(&session_id, &self.working_dir);
+        let session_filename = format!("{}.jsonl", session_id);
+        let session_dirname = session_id.to_string();
 
-        if session_file.exists() {
-            std::fs::remove_file(&session_file)
-                .map_err(|e| McpError::RequestFailed(format!("Failed to delete session file: {}", e)))?;
-            println!("[MCP DEBUG] Deleted global session file: {:?}", session_file);
-            Ok(())
+        println!("[MCP DEBUG] Clear memory - looking for global session files");
+        println!("[MCP DEBUG] Global session ID: {}", session_id);
+        println!("[MCP DEBUG] Looking for files named: {}", session_filename);
+
+        // 获取 Claude projects 目录
+        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        let projects_dir = home.join(".claude").join("projects");
+
+        println!("[MCP DEBUG] Projects directory: {:?}", projects_dir);
+
+        let mut deleted_files = 0;
+        let mut deleted_dirs = 0;
+
+        if projects_dir.exists() {
+            // 遍历所有项目目录
+            if let Ok(project_entries) = std::fs::read_dir(&projects_dir) {
+                for project_entry in project_entries.flatten() {
+                    let project_path = project_entry.path();
+                    if project_path.is_dir() {
+                        // 删除会话文件 (.jsonl)
+                        let session_file = project_path.join(&session_filename);
+                        println!("[MCP DEBUG] Checking file: {:?}", session_file);
+
+                        if session_file.exists() {
+                            match std::fs::remove_file(&session_file) {
+                                Ok(_) => {
+                                    println!("[MCP DEBUG] Deleted file: {:?}", session_file);
+                                    deleted_files += 1;
+                                }
+                                Err(e) => {
+                                    println!("[MCP DEBUG] Failed to delete file {:?}: {}", session_file, e);
+                                }
+                            }
+                        }
+
+                        // 删除会话目录（同名目录可能包含额外的会话数据）
+                        let session_dir = project_path.join(&session_dirname);
+                        if session_dir.exists() && session_dir.is_dir() {
+                            println!("[MCP DEBUG] Checking dir: {:?}", session_dir);
+                            match std::fs::remove_dir_all(&session_dir) {
+                                Ok(_) => {
+                                    println!("[MCP DEBUG] Deleted directory: {:?}", session_dir);
+                                    deleted_dirs += 1;
+                                }
+                                Err(e) => {
+                                    println!("[MCP DEBUG] Failed to delete directory {:?}: {}", session_dir, e);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         } else {
-            println!("[MCP DEBUG] No global session file to delete");
-            Ok(())
+            println!("[MCP DEBUG] Projects directory does not exist!");
         }
+
+        if deleted_files > 0 || deleted_dirs > 0 {
+            println!("[MCP DEBUG] Deleted {} session file(s) and {} session directorie(s)", deleted_files, deleted_dirs);
+        } else {
+            println!("[MCP DEBUG] No global session files found to delete");
+        }
+
+        Ok((deleted_files, deleted_dirs))
     }
 }

@@ -211,9 +211,15 @@ async fn mcp_disconnect(
 #[tauri::command]
 async fn clear_claude_memory(
     state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
-    state.mcp_client.clear_memory().await
-        .map_err(|e| format!("清除记忆失败: {}", e))
+) -> Result<String, String> {
+    let (files, dirs) = state.mcp_client.clear_memory().await
+        .map_err(|e| format!("清除记忆失败: {}", e))?;
+
+    if files > 0 || dirs > 0 {
+        Ok(format!("已删除 {} 个会话文件和 {} 个会话目录", files, dirs))
+    } else {
+        Ok("没有找到需要清除的记忆文件".to_string())
+    }
 }
 
 // 执行 Claude 命令
