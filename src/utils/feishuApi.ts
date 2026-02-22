@@ -113,8 +113,9 @@ export class FeishuApi {
 
   /**
    * 获取群聊消息列表
+   * @param pageSize 消息数量，默认 20
    */
-  async getMessages(_pageSize: number = 20): Promise<Message[]> {
+  async getMessages(pageSize: number = 20): Promise<Message[]> {
     if (!this.config) {
       throw new Error("飞书 API 未初始化");
     }
@@ -127,7 +128,7 @@ export class FeishuApi {
         params: {
           container_id_type: "chat",
           container_id: this.config.feishuChatId,
-          page_size: 20,
+          page_size: pageSize,
           sort_type: "ByCreateTimeDesc",
         },
       }

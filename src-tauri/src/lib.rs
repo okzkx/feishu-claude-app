@@ -30,7 +30,7 @@ impl Default for AppConfig {
             feishu_chat_id: String::new(),
             feishu_user_id: None,
             cmd_prefix: "claude:".to_string(),
-            poll_interval: 5,
+            poll_interval: 2,
             mcp: McpConfig::default(),
         }
     }

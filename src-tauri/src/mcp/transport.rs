@@ -19,20 +19,6 @@ impl StdioTransport {
         }
     }
 
-    /// 获取 claude 命令路径
-    fn get_claude_path() -> &'static str {
-        // Windows 上的 npm 全局路径
-        #[cfg(target_os = "windows")]
-        {
-            // 尝试从环境变量获取，或使用默认路径
-            option_env!("CLAUDE_PATH").unwrap_or("claude")
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            "claude"
-        }
-    }
-
     /// 测试 claude 命令是否可用
     pub async fn test_connection(&mut self) -> Result<(), McpError> {
         println!("[MCP DEBUG] Testing connection with 'claude --version'");
@@ -74,12 +60,12 @@ impl StdioTransport {
         let mut stdout_content = String::new();
         let mut stderr_content = String::new();
 
-        if let Some(mut stdout) = stdout {
+        if let Some(stdout) = stdout {
             let mut reader = BufReader::new(stdout);
             let _ = reader.read_to_string(&mut stdout_content).await;
         }
 
-        if let Some(mut stderr) = stderr {
+        if let Some(stderr) = stderr {
             let mut reader = BufReader::new(stderr);
             let _ = reader.read_to_string(&mut stderr_content).await;
         }

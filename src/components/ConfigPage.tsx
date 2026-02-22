@@ -165,7 +165,7 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
           onFinish={onFinish}
           initialValues={{
             cmdPrefix: "claude:",
-            pollInterval: 5,
+            pollInterval: 2,
             mcp: { enabled: false, workingDir: "." },
           }}
         >

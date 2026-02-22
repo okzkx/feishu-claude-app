@@ -50,6 +50,8 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
   const [testResult, setTestResult] = useState<{ success: boolean; output: string } | null>(null);
   const [mcpStatus, setMcpStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const [mcpNotified, setMcpNotified] = useState(false); // 是否已通知用户 MCP 断开
+  const [lastMessageId, setLastMessageId] = useState<string | null>(null); // 记录最新消息 ID
+  const [isFirstPoll, setIsFirstPoll] = useState(true); // 是否首次轮询
 
   // 定义 pollMessages 在 useEffect 之前，避免变量提升问题
   const pollMessages = useCallback(async (isAutoRefresh: boolean = false) => {
@@ -58,48 +60,64 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     }
 
     try {
-      const msgs = await feishuApi.getMessages();
+      // 首次拉取 20 条，后续只拉取 1 条
+      const pageSize = isFirstPoll ? 20 : 1;
+      const msgs = await feishuApi.getMessages(pageSize);
 
-      // 显示最近10条文本消息
-      setRecentMessages(msgs.filter(m => m.msgType === 'text').slice(0, 10));
+      // 首次拉取时记录最新消息 ID 并显示消息列表
+      if (isFirstPoll && msgs.length > 0) {
+        setLastMessageId(msgs[0].messageId);
+        setRecentMessages(msgs.filter(m => m.msgType === 'text').slice(0, 10));
+        setIsFirstPoll(false);
+        return;
+      }
 
-      // 找到最新一条非机器人消息
-      const latestNonBotMessage = msgs.find(m =>
-        m.msgType === 'text' &&
-        m.senderType !== 'app'  // 非机器人
-      );
+      // 后续拉取：与最新消息比对
+      if (msgs.length > 0 && msgs[0].messageId !== lastMessageId) {
+        const newMsg = msgs[0];
 
-      if (latestNonBotMessage) {
-        // 检查是否已处理
-        const processed = await invoke<boolean>("is_message_processed", {
-          messageId: latestNonBotMessage.messageId,
+        // 更新最新消息 ID
+        setLastMessageId(newMsg.messageId);
+
+        // 更新最近消息列表
+        setRecentMessages((prev) => {
+          const filtered = prev.filter(m => m.messageId !== newMsg.messageId);
+          return [newMsg, ...filtered].slice(0, 10);
         });
 
-        if (!processed) {
-          // 标记已处理
-          await invoke("mark_message_processed", {
-            messageId: latestNonBotMessage.messageId
+        // 检查是否为非机器人消息
+        if (newMsg.msgType === 'text' && newMsg.senderType !== 'app') {
+          // 检查是否已处理
+          const processed = await invoke<boolean>("is_message_processed", {
+            messageId: newMsg.messageId,
           });
 
-          // 更新消息列表显示处理中
-          setMessages((prev) => [
-            { ...latestNonBotMessage, status: "processing" },
-            ...prev,
-          ]);
+          if (!processed) {
+            // 标记已处理
+            await invoke("mark_message_processed", {
+              messageId: newMsg.messageId
+            });
 
-          // 原样转发给 Claude MCP
-          const result = await invoke<TaskResult>("execute_claude", {
-            command: latestNonBotMessage.content,
-          });
+            // 更新消息列表显示处理中
+            setMessages((prev) => [
+              { ...newMsg, status: "processing" },
+              ...prev,
+            ]);
 
-          // 更新消息状态
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.messageId === latestNonBotMessage.messageId
-                ? { ...m, status: result.success ? "completed" : "failed" }
-                : m
-            )
-          );
+            // 原样转发给 Claude MCP
+            const result = await invoke<TaskResult>("execute_claude", {
+              command: newMsg.content,
+            });
+
+            // 更新消息状态
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.messageId === newMsg.messageId
+                  ? { ...m, status: result.success ? "completed" : "failed" }
+                  : m
+              )
+            );
+          }
         }
       }
     } catch (error) {
@@ -110,7 +128,7 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [isFirstPoll, lastMessageId]);
 
   useEffect(() => {
     // 初始化时同步后端轮询状态
@@ -262,8 +280,6 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
   };
 
   const handleTestCommand = async () => {
-    console.log("handleTestCommand called, testCommand:", testCommand);
-
     if (!testCommand.trim()) {
       message.warning("请输入测试指令");
       return;
@@ -273,11 +289,9 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     setTestResult(null);
 
     try {
-      console.log("Invoking execute_claude with command:", testCommand);
       const result = await invoke<TaskResult>("execute_claude", {
         command: testCommand,
       });
-      console.log("execute_claude result:", result);
 
       setTestResult({
         success: result.success,
@@ -290,7 +304,6 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
         message.error("执行失败");
       }
     } catch (error) {
-      console.error("执行错误:", error);
       setTestResult({
         success: false,
         output: String(error),
