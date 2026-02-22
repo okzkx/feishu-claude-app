@@ -38,6 +38,7 @@ pub enum ConnectionStatus {
 
 /// MCP 配置（简化版）
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct McpConfig {
     pub enabled: bool,
     pub working_dir: String,
@@ -122,12 +123,17 @@ mod tests {
 
     #[test]
     fn test_mcp_config_serialization() {
-        let config = McpConfig { enabled: true };
+        let config = McpConfig {
+            enabled: true,
+            working_dir: "/test/path".to_string(),
+        };
 
         let json = serde_json::to_string(&config).unwrap();
         assert!(json.contains("\"enabled\":true"));
+        assert!(json.contains("\"workingDir\":\"/test/path\""));
 
         let deserialized: McpConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.enabled, config.enabled);
+        assert_eq!(deserialized.working_dir, config.working_dir);
     }
 }

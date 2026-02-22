@@ -10,6 +10,7 @@ use mcp::{ConnectionStatus, McpClientManager, McpConfig, McpConnectionInfo};
 
 // 应用配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     pub feishu_app_id: String,
     pub feishu_app_secret: String,

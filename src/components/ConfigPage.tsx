@@ -99,10 +99,32 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
       return;
     }
 
+    const workingDir = values.mcp?.workingDir;
+    if (!workingDir) {
+      message.warning("请先填写 Claude 项目目录");
+      return;
+    }
+
     setMcpTesting(true);
     setMcpConnectionStatus('connecting');
 
     try {
+      // 先保存配置到后端，确保工作目录正确
+      const currentConfig: AppConfig = {
+        feishuAppId: values.feishuAppId || "",
+        feishuAppSecret: values.feishuAppSecret || "",
+        feishuChatId: values.feishuChatId || "",
+        feishuUserId: values.feishuUserId || "",
+        cmdPrefix: values.cmdPrefix || "claude:",
+        pollInterval: values.pollInterval || 5,
+        mcp: {
+          enabled: true,
+          workingDir: workingDir,
+        },
+      };
+      await invoke('save_config', { config: currentConfig });
+
+      // 然后测试连接
       await invoke('mcp_connect');
       message.success("MCP 连接测试成功");
       setMcpConnectionStatus('connected');
