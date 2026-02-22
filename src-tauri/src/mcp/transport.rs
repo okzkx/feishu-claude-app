@@ -105,25 +105,36 @@ impl StdioTransport {
     pub async fn execute(&mut self, command: &str, session_key: Option<&str>) -> Result<String, McpError> {
         println!("[MCP DEBUG] Executing command: {}", command);
 
-        // 获取或创建 session_id
-        let session_id = match session_key {
+        // 获取或创建 session_id，并判断是否为新会话
+        let (session_id, is_new_session) = match session_key {
             Some(key) => {
-                let id = self.session_store
-                    .entry(key.to_string())
-                    .or_insert_with(Uuid::new_v4);
-                println!("[MCP DEBUG] Using session key: {}, id: {}", key, id);
-                Some(*id)
+                if let Some(existing_id) = self.session_store.get(key) {
+                    // 已存在的会话，使用 --resume 恢复
+                    println!("[MCP DEBUG] Resuming session key: {}, id: {}", key, existing_id);
+                    (*existing_id, false)
+                } else {
+                    // 新会话，使用 --session-id 创建
+                    let new_id = Uuid::new_v4();
+                    self.session_store.insert(key.to_string(), new_id);
+                    println!("[MCP DEBUG] Creating new session key: {}, id: {}", key, new_id);
+                    (new_id, true)
+                }
             }
-            None => None,
+            None => (Uuid::nil(), false),
         };
 
         // 构建命令参数
+        // 新会话使用 --session-id，已存在的会话使用 --resume
         let session_id_str;
-        let args: Vec<&str> = if let Some(id) = session_id {
-            session_id_str = id.to_string();
-            vec!["/C", "claude", "-p", "--output-format", "text", "--session-id", &session_id_str, command]
+        let args: Vec<&str> = if session_key.is_some() {
+            session_id_str = session_id.to_string();
+            if is_new_session {
+                vec!["/C", "claude", "-p", "--output-format", "text", "--dangerously-skip-permissions", "--session-id", &session_id_str, command]
+            } else {
+                vec!["/C", "claude", "-p", "--output-format", "text", "--dangerously-skip-permissions", "--resume", &session_id_str, command]
+            }
         } else {
-            vec!["/C", "claude", "-p", "--output-format", "text", command]
+            vec!["/C", "claude", "-p", "--output-format", "text", "--dangerously-skip-permissions", command]
         };
 
         // 在 Windows 上使用 cmd.exe 来执行 claude
@@ -145,9 +156,13 @@ impl StdioTransport {
         #[cfg(not(target_os = "windows"))]
         let mut child = {
             let mut cmd = Command::new("claude");
-            cmd.args(["-p", "--output-format", "text"]);
-            if let Some(id) = session_id {
-                cmd.arg("--session-id").arg(id.to_string());
+            cmd.args(["-p", "--output-format", "text", "--dangerously-skip-permissions"]);
+            if session_key.is_some() {
+                if is_new_session {
+                    cmd.arg("--session-id").arg(session_id.to_string());
+                } else {
+                    cmd.arg("--resume").arg(session_id.to_string());
+                }
             }
             cmd.arg(command)
                 .current_dir(&self.working_dir)
