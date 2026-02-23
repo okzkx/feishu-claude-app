@@ -11,6 +11,7 @@
 - **后端**: Tauri 2 (Rust)
 - **API**: 飞书开放平台 API
 - **AI**: Claude via MCP (Model Context Protocol)
+- **测试**: tauri-driver + WebdriverIO
 
 ### 核心功能
 1. 飞书群聊消息轮询拉取
@@ -19,6 +20,7 @@
 4. 执行结果回传飞书
 5. **连续对话（永久记忆）**
 6. **记忆清除功能**
+7. **E2E 自动化测试**
 
 ---
 
@@ -37,25 +39,63 @@ feishu-claude-app/
 │   ├── src/
 │   │   ├── lib.rs          # 主入口
 │   │   ├── polling.rs      # 轮询逻辑
-│   │   ├── mcp/            # MCP 模块
-│   │   │   ├── transport.rs # 会话管理核心
-│   │   │   ├── client.rs   # MCP 客户端
-│   │   │   └── types.rs    # 类型定义
-│   └── capabilities/       # Tauri 权限配置
+│   │   └── mcp/            # MCP 模块
+│   │       ├── transport.rs # 会话管理核心
+│   │       ├── client.rs   # MCP 客户端
+│   │       └── types.rs    # 类型定义
+├── tests/                  # E2E 测试
+│   └── app.test.ts         # 测试用例 (18个)
 ├── docs/                   # 技术文档
-│   └── session-persistence-report.md
+│   ├── session-persistence-report.md
+│   └── tauri-e2e-testing-report.md
 └── .claude/                # Claude Code 配置
     ├── agents/             # Agent 配置
     │   ├── claude-cli-researcher.md
-    │   └── session-persistence-specialist.md
+    │   ├── session-persistence-specialist.md
+    │   └── tauri-webdriver-specialist.md
     └── skills/             # Skill 配置
         ├── claude-session-management.md
-        └── permanent-memory.md
+        ├── permanent-memory.md
+        └── tauri-e2e-testing.md
 ```
 
 ---
 
 ## 已解决问题
+
+### 2026-02-23: Tauri E2E 测试框架
+
+**问题**: 需要自动化测试 Tauri 应用
+
+**解决方案**: tauri-driver + WebdriverIO
+- 安装 tauri-driver (cargo install tauri-driver)
+- 下载 Edge WebDriver (版本必须匹配)
+- 配置 WebdriverIO 使用 `browserName: 'wry'`
+
+**测试结果**: 16 passing / 2 failing (89% 通过率)
+
+**运行测试**:
+```bash
+# 1. 启动驱动
+tauri-driver --native-driver C:\Users\71411\AppData\Local\webdriver\msedgedriver.exe
+
+# 2. 运行测试
+npx wdio run wdio.conf.ts
+```
+
+---
+
+### 2026-02-23: MCP 运行目录问题
+
+**问题**: Claude 子进程在错误的目录运行
+
+**解决方案**: 前端配置同步到后端
+- App.tsx: 加载配置时调用 `invoke('save_config')`
+- ConfigPage.tsx: 保存配置时调用 `invoke('save_config')`
+
+**验证**: 查看日志 `Working directory: "配置的目录"`
+
+---
 
 ### 2026-02-23: 简化会话管理（最终方案）
 
@@ -70,10 +110,6 @@ feishu-claude-app/
 // 静态标志控制清除记忆
 static SHOULD_CLEAR_MEMORY: AtomicBool = AtomicBool::new(false);
 
-pub fn set_clear_memory_flag() {
-    SHOULD_CLEAR_MEMORY.store(true, Ordering::SeqCst);
-}
-
 // 执行时检查标志
 let should_clear = SHOULD_CLEAR_MEMORY.swap(false, Ordering::SeqCst);
 let args = if should_clear {
@@ -85,53 +121,11 @@ let args = if should_clear {
 };
 ```
 
-**优势**:
-- 无需管理 session ID
-- 无需额外依赖（移除了 uuid, sha2, dirs）
-- 代码简洁，逻辑清晰
-
 ---
 
 ### 2026-02-23: 清除记忆按钮无响应
 
-**问题**: 点击清除记忆按钮没有任何反馈
-
-**解决方案**:
-- 使用声明式 `<Modal>` 组件替代 `Modal.confirm` 方法
-- 添加 `clearingMemory` 状态显示 loading
-
-```tsx
-const [clearMemoryModalOpen, setClearMemoryModalOpen] = useState(false);
-
-<Modal
-  title="确认清除记忆"
-  open={clearMemoryModalOpen}
-  onOk={handleClearMemoryConfirm}
-  onCancel={() => setClearMemoryModalOpen(false)}
-  okButtonProps={{ danger: true, loading: clearingMemory }}
->
-  下次对话将开启全新会话...
-</Modal>
-```
-
----
-
-### 2026-02-22: HTTP 请求错误 + 增量拉取失效
-
-**问题 1**: HTTP 请求间歇性报错 `error sending request for url`
-
-**解决方案**:
-- 在 `http.ts` 添加自动重试机制 (最多 3 次重试)
-- 使用指数退避 + 随机抖动策略
-- 智能识别可重试错误 (429/5xx/网络错误)
-
-**问题 2**: 增量拉取的消息不显示，只有首次拉取的消息
-
-**根本原因**: `useCallback` 闭包捕获了 stale state
-
-**解决方案**:
-- 将 `lastMessageId` 和 `isFirstPoll` 从 `useState` 改为 `useRef`
-- ref 的 `.current` 不受闭包影响，总是获取最新值
+**解决方案**: 使用声明式 `<Modal>` 组件替代 `Modal.confirm` 方法
 
 ---
 
@@ -154,18 +148,6 @@ let args = vec![
 // 使用 ref 避免 stale closure
 const lastMessageIdRef = useRef<string | null>(null);
 const isFirstPollRef = useRef(true);
-
-// 在 useCallback 中使用 ref.current
-const pollMessages = useCallback(async () => {
-  if (isFirstPollRef.current) {
-    lastMessageIdRef.current = msgs[0].messageId;
-    isFirstPollRef.current = false;
-  } else {
-    if (msgs[0].messageId !== lastMessageIdRef.current) {
-      // 处理新消息
-    }
-  }
-}, []); // 依赖数组为空，ref 变化不需要重新创建
 ```
 
 ---
@@ -181,6 +163,10 @@ npm run build
 
 # 类型检查
 npx tsc --noEmit
+
+# E2E 测试
+tauri-driver --native-driver <path-to-msedgedriver>
+npx wdio run wdio.conf.ts
 ```
 
 ---
@@ -192,6 +178,7 @@ npx tsc --noEmit
 - `feishuAppSecret`: 飞书应用密钥
 - `feishuChatId`: 目标群聊 ID
 - `feishuUserId`: 用户 ID (用于过滤自己的消息)
+- `mcp.workingDir`: Claude 项目目录
 
 ### API 端点
 - Token: `POST /auth/v3/tenant_access_token/internal`
@@ -212,9 +199,11 @@ npx tsc --noEmit
 |-------|------|
 | claude-cli-researcher | 研究 Claude CLI 参数和会话机制 |
 | session-persistence-specialist | 解决会话持久化问题 |
+| tauri-webdriver-specialist | Tauri E2E 测试 |
 
 ### Skills
 | Skill | 用途 |
 |-------|------|
 | claude-session-management | Claude 会话管理技术 |
 | permanent-memory | 永久记忆实现方案 |
+| tauri-e2e-testing | Tauri 自动化测试 |
