@@ -1,9 +1,34 @@
 use super::types::McpError;
+use std::env;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::{Child, Command};
+
+/// 获取包含 npm 全局路径的 PATH 环境变量
+/// 解决 Release 版本找不到 npm 安装的 claude 命令的问题
+#[cfg(target_os = "windows")]
+fn get_npm_aware_path() -> String {
+    let current_path = env::var("PATH").unwrap_or_default();
+
+    // 获取 npm 全局路径：%APPDATA%\npm
+    let npm_path = env::var("APPDATA")
+        .map(|appdata| format!("{}\\npm", appdata))
+        .unwrap_or_default();
+
+    // 检查 npm 路径是否已在 PATH 中
+    if npm_path.is_empty() || current_path.contains(&npm_path) {
+        return current_path;
+    }
+
+    // 添加 npm 路径到 PATH（放在前面优先匹配）
+    if current_path.is_empty() {
+        npm_path
+    } else {
+        format!("{};{}", npm_path, current_path)
+    }
+}
 
 /// 清除记忆标志：下次执行时不使用 --continue，开启全新会话
 static SHOULD_CLEAR_MEMORY: AtomicBool = AtomicBool::new(false);
@@ -35,11 +60,13 @@ impl StdioTransport {
 
         // 在 Windows 上使用 cmd.exe 来执行 claude（npm 安装的命令需要 .cmd 扩展名）
         // 清除 CLAUDECODE 环境变量以避免嵌套会话检测
+        // 设置 PATH 包含 npm 全局路径，确保能找到 claude 命令
         #[cfg(target_os = "windows")]
         let mut child = Command::new("cmd")
             .args(["/C", "claude", "--version"])
             .current_dir(&self.working_dir)
             .env("CLAUDECODE", "")
+            .env("PATH", get_npm_aware_path())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -140,11 +167,13 @@ impl StdioTransport {
 
         // 在 Windows 上使用 cmd.exe 来执行 claude
         // 清除 CLAUDECODE 环境变量以避免嵌套会话检测
+        // 设置 PATH 包含 npm 全局路径，确保能找到 claude 命令
         #[cfg(target_os = "windows")]
         let mut child = Command::new("cmd")
             .args(&args)
             .current_dir(&self.working_dir)
             .env("CLAUDECODE", "")
+            .env("PATH", get_npm_aware_path())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
