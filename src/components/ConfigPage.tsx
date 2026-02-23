@@ -182,7 +182,6 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
           layout="vertical"
           onFinish={onFinish}
           initialValues={{
-            cmdPrefix: "claude:",
             pollInterval: 2,
             mcp: { enabled: false, workingDir: "." },
           }}
@@ -220,22 +219,6 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
             }
           >
             <Input placeholder="oc_xxxxxxxxxxxx" />
-          </Form.Item>
-
-          <Form.Item
-            name="feishuUserId"
-            label="你的飞书 User ID（可选）"
-            extra="填写后只处理你的消息，留空则处理所有消息"
-          >
-            <Input placeholder="ou_xxxxxxxxxxxx" />
-          </Form.Item>
-
-          <Form.Item
-            name="cmdPrefix"
-            label="指令前缀"
-            extra="消息以此前缀开头才会被处理"
-          >
-            <Input placeholder="claude:" />
           </Form.Item>
 
           <Form.Item

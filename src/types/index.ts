@@ -8,7 +8,7 @@ export interface AppConfig {
   feishuAppSecret: string;
   feishuChatId: string;
   feishuUserId?: string;
-  cmdPrefix: string;
+  cmdPrefix?: string;
   pollInterval: number;
   mcp: McpConfig;
 }
