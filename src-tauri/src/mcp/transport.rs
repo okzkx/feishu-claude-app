@@ -238,4 +238,10 @@ impl StdioTransport {
     pub fn set_clear_memory() {
         set_clear_memory_flag();
     }
+
+    /// 设置工作目录
+    pub fn set_working_dir(&mut self, path: String) {
+        self.working_dir = PathBuf::from(path);
+        println!("[MCP DEBUG] Working directory changed to: {:?}", self.working_dir);
+    }
 }

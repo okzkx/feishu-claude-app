@@ -100,6 +100,12 @@ impl McpClient {
     pub fn clear_memory(&self) {
         StdioTransport::set_clear_memory();
     }
+
+    /// 设置工作目录
+    pub async fn set_working_dir(&mut self, path: String) {
+        let mut transport = self.transport.lock().await;
+        transport.set_working_dir(path);
+    }
 }
 
 impl Default for McpClient {
@@ -167,6 +173,12 @@ impl McpClientManager {
     pub fn clear_memory(&self) {
         // 直接调用静态方法，不需要锁
         StdioTransport::set_clear_memory();
+    }
+
+    /// 设置工作目录
+    pub async fn set_working_dir(&self, path: String) {
+        let mut client = self.client.lock().await;
+        client.set_working_dir(path).await;
     }
 }
 

@@ -217,6 +217,25 @@ fn clear_claude_memory(
     Ok("已设置清除记忆标志，下次对话将开启全新会话".to_string())
 }
 
+// 设置工作目录
+#[tauri::command]
+async fn set_working_dir(
+    state: tauri::State<'_, AppState>,
+    path: String,
+) -> Result<String, String> {
+    // 验证路径是否存在
+    let path_buf = std::path::PathBuf::from(&path);
+    if !path_buf.exists() {
+        return Err(format!("目录不存在: {}", path));
+    }
+    if !path_buf.is_dir() {
+        return Err(format!("路径不是目录: {}", path));
+    }
+
+    state.mcp_client.set_working_dir(path.clone()).await;
+    Ok(format!("工作目录已切换到: {}", path))
+}
+
 // 执行 Claude 命令
 #[tauri::command]
 async fn execute_claude(
@@ -302,6 +321,7 @@ pub fn run() {
             mcp_connect,
             mcp_disconnect,
             clear_claude_memory,
+            set_working_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

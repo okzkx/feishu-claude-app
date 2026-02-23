@@ -27,6 +27,8 @@ import {
   ApiOutlined,
   DisconnectOutlined,
   CloudOutlined,
+  CodeOutlined,
+  FolderOutlined,
 } from "@ant-design/icons";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -53,6 +55,46 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
   const [mcpNotified, setMcpNotified] = useState(false); // 是否已通知用户 MCP 断开
   const [mcpConnecting, setMcpConnecting] = useState(false); // MCP 连接中状态
   const [clearingMemory, setClearingMemory] = useState(false); // 清除记忆中状态
+  const [currentWorkingDir, setCurrentWorkingDir] = useState<string>(''); // 当前工作目录
+
+  // 管理员指令列表
+  const adminCommands = [
+    { cmd: '/clear', desc: '清除 Claude 记忆', icon: <StopOutlined /> },
+    { cmd: '/cd <目录>', desc: '切换工作目录', icon: <FolderOutlined /> },
+  ];
+
+  // 处理管理员指令
+  const handleAdminCommand = async (content: string): Promise<{ handled: boolean; response?: string }> => {
+    const trimmedContent = content.trim();
+
+    // /clear - 清除记忆
+    if (trimmedContent === '/clear') {
+      try {
+        const result = await invoke<string>("clear_claude_memory");
+        return { handled: true, response: result };
+      } catch (error) {
+        return { handled: true, response: `清除记忆失败: ${error}` };
+      }
+    }
+
+    // /cd <目录> - 切换工作目录
+    if (trimmedContent.startsWith('/cd ')) {
+      const path = trimmedContent.slice(4).trim();
+      if (!path) {
+        return { handled: true, response: '请指定目录路径，例如: /cd /path/to/project' };
+      }
+      try {
+        const result = await invoke<string>("set_working_dir", { path });
+        setCurrentWorkingDir(path);
+        return { handled: true, response: result };
+      } catch (error) {
+        return { handled: true, response: `切换目录失败: ${error}` };
+      }
+    }
+
+    // 非管理员指令
+    return { handled: false };
+  };
 
   // 使用 ref 解决事件监听器中的闭包问题
   // 事件监听器调用 pollMessages 时，需要获取最新的值，而不是闭包中捕获的旧值
@@ -115,11 +157,24 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
               ...prev,
             ]);
 
-            // 原样转发给 Claude MCP
-            const result = await invoke<TaskResult>("execute_claude", {
-              command: newMsg.content,
-              chatId: newMsg.chatId,
-            });
+            let result: TaskResult;
+
+            // 检查是否为管理员指令
+            const adminResult = await handleAdminCommand(newMsg.content);
+            if (adminResult.handled) {
+              // 管理员指令已处理
+              result = {
+                success: true,
+                output: adminResult.response || '指令已执行',
+                timestamp: Date.now() / 1000 | 0,
+              };
+            } else {
+              // 原样转发给 Claude MCP
+              result = await invoke<TaskResult>("execute_claude", {
+                command: newMsg.content,
+                chatId: newMsg.chatId,
+              });
+            }
 
             // 更新消息状态
             setMessages((prev) =>
@@ -129,6 +184,13 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
                   : m
               )
             );
+
+            // 发送结果到飞书
+            if (result.success && result.output) {
+              await feishuApi.sendMessage(result.output);
+            } else if (!result.success) {
+              await feishuApi.sendMessage(`执行失败: ${result.output}`);
+            }
           }
         }
       }
@@ -700,6 +762,39 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
               style={{ marginBottom: 8 }}
             />
           )}
+
+          <Divider />
+
+          {/* 管理员指令说明 */}
+          <Card
+            size="small"
+            title={
+              <Space>
+                <CodeOutlined />
+                <span>管理员指令</span>
+              </Space>
+            }
+          >
+            <List
+              dataSource={adminCommands}
+              renderItem={(item) => (
+                <List.Item style={{ padding: '8px 0', border: 'none' }}>
+                  <Space>
+                    <Tag icon={item.icon} color="blue" style={{ fontFamily: 'monospace' }}>
+                      {item.cmd}
+                    </Tag>
+                    <Text type="secondary">{item.desc}</Text>
+                  </Space>
+                </List.Item>
+              )}
+            />
+            {currentWorkingDir && (
+              <div style={{ marginTop: 8, padding: '8px', backgroundColor: '#f5f5f5', borderRadius: 4 }}>
+                <Text type="secondary">当前工作目录: </Text>
+                <Text code>{currentWorkingDir}</Text>
+              </div>
+            )}
+          </Card>
 
           <Divider />
 
