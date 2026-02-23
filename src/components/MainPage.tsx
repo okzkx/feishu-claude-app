@@ -13,7 +13,6 @@ import {
   Spin,
   Alert,
   Tooltip,
-  Modal,
 } from "antd";
 import {
   PlayCircleOutlined,
@@ -53,8 +52,6 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
   const [testResult, setTestResult] = useState<{ success: boolean; output: string } | null>(null);
   const [mcpStatus, setMcpStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const [mcpNotified, setMcpNotified] = useState(false); // 是否已通知用户 MCP 断开
-  const [mcpConnecting, setMcpConnecting] = useState(false); // MCP 连接中状态
-  const [clearingMemory, setClearingMemory] = useState(false); // 清除记忆中状态
   const [currentWorkingDir, setCurrentWorkingDir] = useState<string>(''); // 当前工作目录
 
   // 管理员指令列表
@@ -449,58 +446,6 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     }
   };
 
-  const [clearMemoryModalOpen, setClearMemoryModalOpen] = useState(false);
-
-  const handleClearMemory = () => {
-    console.log('[Clear Memory] Button clicked');
-    setClearMemoryModalOpen(true);
-  };
-
-  const handleClearMemoryConfirm = async () => {
-    console.log('[Clear Memory] User confirmed');
-    setClearingMemory(true);
-    try {
-      const result = await invoke<string>("clear_claude_memory");
-      console.log('[Clear Memory] Result:', result);
-      message.success(result || '已设置清除记忆标志');
-      setClearMemoryModalOpen(false);
-    } catch (error) {
-      console.error('[Clear Memory] Error:', error);
-      message.error(`设置清除标志失败: ${error}`);
-    } finally {
-      setClearingMemory(false);
-    }
-  };
-
-  const handleMcpConnect = async () => {
-    if (!config.mcp?.enabled) {
-      message.warning("请先在设置中启用 MCP");
-      return;
-    }
-
-    setMcpConnecting(true);
-    try {
-      await invoke("mcp_connect");
-      message.success("MCP 连接成功");
-    } catch (error) {
-      message.error(`MCP 连接失败: ${error}`);
-    } finally {
-      setMcpConnecting(false);
-    }
-  };
-
-  const handleMcpDisconnect = async () => {
-    setMcpConnecting(true);
-    try {
-      await invoke("mcp_disconnect");
-      message.success("MCP 已断开");
-    } catch (error) {
-      message.error(`MCP 断开失败: ${error}`);
-    } finally {
-      setMcpConnecting(false);
-    }
-  };
-
   const statusColors: Record<string, string> = {
     pending: "default",
     processing: "processing",
@@ -684,57 +629,7 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
                 手动刷新
               </Button>
             </Tooltip>
-            {/* MCP 连接控制 */}
-            {config.mcp?.enabled && (
-              mcpStatus === 'connected' ? (
-                <Tooltip title="断开 MCP 连接">
-                  <Button
-                    icon={<DisconnectOutlined />}
-                    onClick={handleMcpDisconnect}
-                    loading={mcpConnecting}
-                  >
-                    断开 MCP
-                  </Button>
-                </Tooltip>
-              ) : (
-                <Tooltip title={mcpStatus === 'connecting' ? "正在连接..." : "连接 MCP 服务"}>
-                  <Button
-                    type="default"
-                    icon={<ApiOutlined />}
-                    onClick={handleMcpConnect}
-                    loading={mcpConnecting || mcpStatus === 'connecting'}
-                    disabled={mcpStatus === 'connecting'}
-                  >
-                    连接 MCP
-                  </Button>
-                </Tooltip>
-              )
-            )}
-            <Tooltip title="清除 Claude 的所有记忆">
-              <Button
-                danger
-                icon={<StopOutlined />}
-                onClick={handleClearMemory}
-                loading={clearingMemory}
-              >
-                清除记忆
-              </Button>
-            </Tooltip>
           </Space>
-
-          {/* 清除记忆确认对话框 */}
-          <Modal
-            title="确认清除记忆"
-            open={clearMemoryModalOpen}
-            onOk={handleClearMemoryConfirm}
-            onCancel={() => setClearMemoryModalOpen(false)}
-            okText="确认清除"
-            cancelText="取消"
-            okButtonProps={{ danger: true, loading: clearingMemory }}
-          >
-            <p>下次对话将开启全新会话，Claude 将不再记得之前的对话内容。</p>
-            <p>确定要继续吗？</p>
-          </Modal>
 
           {/* 刷新状态提示 */}
           {refreshing && (
