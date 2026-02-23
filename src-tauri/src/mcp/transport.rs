@@ -112,6 +112,7 @@ impl StdioTransport {
     /// 如果设置了清除记忆标志，则不使用 --continue，开启全新会话
     pub async fn execute(&mut self, command: &str, _session_key: Option<&str>) -> Result<String, McpError> {
         println!("[MCP DEBUG] Executing command: {}", command);
+        println!("[MCP DEBUG] Working directory: {:?}", self.working_dir);
 
         // 检查是否需要清除记忆（开启新会话）
         let should_clear = SHOULD_CLEAR_MEMORY.swap(false, Ordering::SeqCst);
