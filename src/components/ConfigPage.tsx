@@ -34,9 +34,27 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
   const onFinish = async (values: AppConfig) => {
     setLoading(true);
     try {
-      onConfigured(values);
+      // 构建完整配置，确保 mcp 字段完整
+      const fullConfig: AppConfig = {
+        feishuAppId: values.feishuAppId,
+        feishuAppSecret: values.feishuAppSecret,
+        feishuChatId: values.feishuChatId,
+        feishuUserId: values.feishuUserId,
+        cmdPrefix: values.cmdPrefix || "claude:",
+        pollInterval: values.pollInterval || 5,
+        mcp: {
+          enabled: values.mcp?.enabled ?? false,
+          workingDir: values.mcp?.workingDir || ".",
+        },
+      };
+
+      // 同步配置到 Rust 后端（关键：确保 MCP working_dir 正确）
+      await invoke('save_config', { config: fullConfig });
+
+      // 更新前端状态和 localStorage
+      onConfigured(fullConfig);
     } catch (error) {
-      message.error("配置保存失败");
+      message.error(`配置保存失败: ${error}`);
     } finally {
       setLoading(false);
     }

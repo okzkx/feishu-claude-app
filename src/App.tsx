@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { ConfigProvider, theme, message } from "antd";
+import { invoke } from "@tauri-apps/api/core";
 import ConfigPage from "./components/ConfigPage";
 import MainPage from "./components/MainPage";
 import { storage, feishuApi } from "./utils";
@@ -13,12 +14,24 @@ function App() {
 
   useEffect(() => {
     // 加载保存的配置
-    const savedConfig = storage.getConfig();
-    if (savedConfig) {
-      setConfig(savedConfig);
-      feishuApi.init(savedConfig);
-    }
-    setLoading(false);
+    const loadConfig = async () => {
+      const savedConfig = storage.getConfig();
+      if (savedConfig) {
+        setConfig(savedConfig);
+        feishuApi.init(savedConfig);
+
+        // 关键：同步配置到 Rust 后端，确保 MCP working_dir 正确
+        try {
+          await invoke('save_config', { config: savedConfig });
+          console.log('[App] 配置已同步到后端');
+        } catch (error) {
+          console.error('[App] 同步配置到后端失败:', error);
+        }
+      }
+      setLoading(false);
+    };
+
+    loadConfig();
   }, []);
 
   const handleConfigured = (newConfig: AppConfig) => {
