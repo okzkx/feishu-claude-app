@@ -1,6 +1,6 @@
 {
   "name": "feishu-claude-app",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "飞书消息轮询 + Claude Code 执行应用",
   "scripts": {
     "dev": "vite",
