@@ -37,7 +37,17 @@
       "options": {
         "cwd": "${workspaceFolder}"
       },
-      "problemMatcher": [],
+      "problemMatcher": {
+        "owner": "custom",
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Running BeforeDevCommand",
+          "endsPattern": "(Local:.*http://localhost:\\d+|Running DevCommand)"
+        }
+      },
       "isBackground": true,
       "presentation": {
         "reveal": "always",
