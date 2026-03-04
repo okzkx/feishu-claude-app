@@ -208,8 +208,11 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     // 初始化时同步后端轮询状态
     invoke<boolean>("is_polling_running").then(setIsRunning).catch(console.error);
 
-    // 初始化时获取 MCP 状态
-    if (config.mcp?.enabled) {
+    // 检查配置是否完整（决定是否自动启动）
+    const configComplete = config.feishuAppId && config.feishuAppSecret && config.feishuChatId;
+
+    // 初始化时获取 MCP 状态（仅在配置不完整时，避免与自动启动冲突）
+    if (config.mcp?.enabled && !configComplete) {
       invoke<any>("mcp_status")
         .then((info) => {
           if (info && info.status) {
@@ -217,6 +220,9 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
           }
         })
         .catch(console.error);
+    } else if (config.mcp?.enabled && configComplete) {
+      // 配置完整时，设置为 connecting 状态，等待自动启动
+      setMcpStatus('connecting');
     }
 
     // 自动启动逻辑：如果 MCP 启用且配置完整，自动连接并启动轮询
