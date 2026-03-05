@@ -3,6 +3,7 @@
  * 参考 feishu_docs_export 的实现
  */
 import axios, { AxiosInstance } from "axios";
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import type { AppConfig, Message } from "../types";
 import { createTauriAdapter } from "./http";
 
@@ -29,6 +30,10 @@ interface ChatListData {
   items: ChatItem[];
   has_more: boolean;
   page_token?: string;
+}
+
+interface ImageUploadResponse {
+  image_key: string;
 }
 
 export class FeishuApi {
@@ -174,12 +179,18 @@ export class FeishuApi {
 
     const headers = await this.getHeaders();
 
-    let messageContent: string;
+    // 构建消息内容
+    let messageContent: any;
     if (msgType === "text") {
-      messageContent = JSON.stringify({ text: content });
+      messageContent = { text: content };
+    } else if (msgType === "image") {
+      // content 是 JSON 字符串，需要解析
+      messageContent = JSON.parse(content);
     } else {
       messageContent = content;
     }
+
+    console.log("[sendMessage] 发送消息:", { msgType, messageContent });
 
     // 飞书发送消息 API 需要将 receive_id_type 和 receive_id 作为查询参数
     const response = await this.axiosInstance.post<FeishuResponse<unknown>>(
@@ -258,6 +269,75 @@ export class FeishuApi {
    */
   hasValidConfig(): boolean {
     return !!(this.config?.feishuAppId && this.config?.feishuAppSecret);
+  }
+
+  /**
+   * 上传图片到飞书服务器
+   * @param imageBuffer 图片二进制数据
+   * @param imageType 图片类型 (image/png, image/jpeg 等)
+   * @returns image_key
+   */
+  async uploadImage(imageBuffer: Uint8Array, imageType: string): Promise<string> {
+    const token = await this.getTenantAccessToken();
+
+    console.log("[uploadImage] 开始上传图片，大小:", imageBuffer.length, "类型:", imageType);
+
+    // 使用 Tauri HTTP 插件的 multipart 上传
+    const boundary = `----WebKitFormBoundary${Date.now()}`;
+
+    // 构建 multipart/form-data 请求体
+    let body = '';
+
+    // image 字段
+    body += `--${boundary}\r\n`;
+    body += `Content-Disposition: form-data; name="image"; filename="image.png"\r\n`;
+    body += `Content-Type: ${imageType}\r\n\r\n`;
+    // 注意：二进制数据需要特殊处理
+    const binaryHeader = body;
+    let binaryFooter = `\r\n--${boundary}\r\n`;
+    binaryFooter += `Content-Disposition: form-data; name="image_type"\r\n\r\n`;
+    binaryFooter += `message\r\n`;
+    binaryFooter += `--${boundary}--\r\n`;
+
+    // 将二进制数据转换为 Uint8Array
+    const headerBytes = new TextEncoder().encode(binaryHeader);
+    const footerBytes = new TextEncoder().encode(binaryFooter);
+
+    // 合并 header + image + footer
+    const totalLength = headerBytes.length + imageBuffer.length + footerBytes.length;
+    const finalBody = new Uint8Array(totalLength);
+    finalBody.set(headerBytes, 0);
+    finalBody.set(imageBuffer, headerBytes.length);
+    finalBody.set(footerBytes, headerBytes.length + imageBuffer.length);
+
+    // 使用 Tauri fetch 直接上传
+    const response = await tauriFetch("https://open.feishu.cn/open-apis/im/v1/images", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      },
+      body: finalBody,
+    });
+
+    const data = await response.json() as FeishuResponse<ImageUploadResponse>;
+
+    console.log("[uploadImage] 响应:", data);
+
+    if (data.code !== 0) {
+      throw new Error(`上传图片失败: ${data.msg} (code: ${data.code})`);
+    }
+
+    return data.data.image_key;
+  }
+
+  /**
+   * 发送图片消息
+   * @param imageKey 图片的 image_key
+   * @returns 是否成功
+   */
+  async sendImageMessage(imageKey: string): Promise<boolean> {
+    return this.sendMessage(JSON.stringify({ image_key: imageKey }), "image");
   }
 }
 

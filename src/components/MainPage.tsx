@@ -51,6 +51,7 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
   const [testCommand, setTestCommand] = useState("");
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; output: string } | null>(null);
+  const [testImageLoading, setTestImageLoading] = useState(false);
   const [mcpStatus, setMcpStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const [mcpNotified, setMcpNotified] = useState(false); // 是否已通知用户 MCP 断开
   const [mcpConnecting, setMcpConnecting] = useState(false); // MCP 连接中状态
@@ -104,9 +105,16 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
   // 定义 pollMessages 在 useEffect 之前，避免变量提升问题
   // 使用 ref 确保总是获取最新的值，避免事件监听器中的闭包问题
   const pollMessages = useCallback(async (isAutoRefresh: boolean = false) => {
-    if (!isAutoRefresh) {
-      setRefreshing(true);
+    // 检查配置是否已初始化
+    if (!config || !feishuApi.hasValidConfig()) {
+      if (!isAutoRefresh) {
+        message.warning("请先配置飞书应用信息");
+      }
+      setRefreshing(false);
+      return;
     }
+
+    setRefreshing(true);
 
     try {
       // 从 ref 获取最新值
@@ -366,7 +374,7 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
       // 清理所有事件监听器
       unlistenFns.forEach((fn) => fn.then((f) => f()));
     };
-  }, [pollMessages]);
+  }, [config]);
 
   const handleStart = async () => {
     setLoading(true);
@@ -452,6 +460,37 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
       message.error(`执行失败: ${error}`);
     } finally {
       setTestLoading(false);
+    }
+  };
+
+  // 测试发送图片到飞书
+  const handleTestImage = async () => {
+    setTestImageLoading(true);
+    try {
+      // 使用 1x1 像素的透明 PNG 图片
+      const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=";
+      const binaryString = atob(pngBase64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      // 上传图片到飞书
+      const imageKey = await feishuApi.uploadImage(bytes, "image/png");
+
+      // 发送图片消息
+      const success = await feishuApi.sendImageMessage(imageKey);
+
+      if (success) {
+        message.success("图片发送成功！");
+      } else {
+        message.error("图片发送失败");
+      }
+    } catch (error) {
+      console.error("发送图片失败:", error);
+      message.error(`发送图片失败: ${error}`);
+    } finally {
+      setTestImageLoading(false);
     }
   };
 
@@ -824,6 +863,15 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
                   执行
                 </Button>
               </div>
+
+              {/* 测试发送图片按钮 */}
+              <Button
+                onClick={handleTestImage}
+                loading={testImageLoading}
+                style={{ width: '100%' }}
+              >
+                测试发送图片到飞书
+              </Button>
 
               {/* 测试结果显示 */}
               {testResult && (
