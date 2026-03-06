@@ -312,25 +312,15 @@ export class FeishuApi {
     // 构建 multipart/form-data 请求体
     // 格式: --boundary\r\nContent-Disposition: form-data; name="image"; filename="image.png"\r\nContent-Type: image/png\r\n\r\n[binary data]\r\n--boundary\r\nContent-Disposition: form-data; name="image_type"\r\n\r\nmessage\r\n--boundary--\r\n
 
-    const headerLines: string[] = [
-      `--${boundary}`,
-      `Content-Disposition: form-data; name="image"; filename="image.png"`,
-      `Content-Type: ${imageType}`,
-      '',
-    ];
+    // Header 部分: 注意最后要有两个 \r\n (一个来自 join，一个单独添加)
+    const headerPart = `--${boundary}\r\nContent-Disposition: form-data; name="image"; filename="image.png"\r\nContent-Type: ${imageType}\r\n\r\n`;
 
-    const footerLines: string[] = [
-      `--${boundary}`,
-      `Content-Disposition: form-data; name="image_type"`,
-      '',
-      `message`,
-      `--${boundary}--`,
-      '',
-    ];
+    // Footer 部分
+    const footerPart = `\r\n--${boundary}\r\nContent-Disposition: form-data; name="image_type"\r\n\r\nmessage\r\n--${boundary}--\r\n`;
 
     // 转换为 Uint8Array
-    const headerBytes = new TextEncoder().encode(headerLines.join('\r\n'));
-    const footerBytes = new TextEncoder().encode(footerLines.join('\r\n'));
+    const headerBytes = new TextEncoder().encode(headerPart);
+    const footerBytes = new TextEncoder().encode(footerPart);
 
     // 合并 header + image + footer
     const totalLength = headerBytes.length + imageBuffer.length + footerBytes.length;
