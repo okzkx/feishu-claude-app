@@ -453,3 +453,24 @@ if (this.config.feishuChatId.startsWith(\"oc_\")) {
   requestBodyObj[\"open_id\"] = this.config.feishuChatId;
 }
 \`\`\`
+
+
+---
+
+## 第九次修复：将 receive_id 移到 URL 查询参数
+
+**提交**: 7d8fe1a
+
+**问题**: `field validation failed` (code 99992402) 持续存在
+
+**根因**: 根据 Feishu API 文档，`receive_id` 和 `receive_id_type` 必须在 **URL 查询参数** 中，而不是请求体中
+
+**解决方案**:
+- 将 `receive_id_type` 和 `receive_id` 移到 URL 查询参数
+- 请求体只包含 `msg_type` 和 `content`
+- 使用 `URLSearchParams` 构建查询参数
+
+**最终请求格式**:
+URL: https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id&receive_id=oc_xxx
+Body: { "msg_type": "image", "content": "{\"image_key\":\"img_xxx\"}" }
+
