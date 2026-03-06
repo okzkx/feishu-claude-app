@@ -269,3 +269,48 @@ const response = await axios.post(url, requestBody);
   "content": "{\"image_key\":\"img_xxx\"}"
 }
 \`\`\`
+
+---
+
+## 第四次修复：使用 tauriFetch 绕过 axios
+
+**提交**: 376d0ee
+
+**问题**: axios 自动序列化仍然无法正确处理，HTTP 400 错误持续
+
+**根本原因**:
+- axios 的自动序列化行为无法被简单地绕过
+- Tauri 的 HTTP 适配器可能对字符串 body 有特殊处理
+- 飞书 API 要求严格的 JSON 字符串格式
+
+**解决方案**:
+- 放弃使用 axios 发送消息请求
+- 改用 tauriFetch 直接发送 POST 请求
+- 完全控制请求格式和序列化过程
+
+**代码示例**:
+\`\`\`typescript
+// 新方式 - 使用 tauriFetch
+const requestBody = JSON.stringify({
+  msg_type: msgType,
+  content: messageContent,
+});
+
+const url = \`https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id&receive_id=\${chatId}\`;
+const response = await tauriFetch(url, {
+  method: "POST",
+  headers: {
+    Authorization: \`Bearer \${token}\`,
+    "Content-Type": "application/json",
+  },
+  body: requestBody,  // 传递 JSON 字符串
+});
+\`\`\`
+
+**最终请求格式** (直接发送，无中间转换):
+\`\`\`json
+{
+  "msg_type": "image",
+  "content": "{\"image_key\":\"img_xxx\"}"
+}
+\`\`\`
