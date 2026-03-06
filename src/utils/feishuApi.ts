@@ -167,6 +167,13 @@ export class FeishuApi {
       body: requestBody,
     });
 
+    // 检查响应状态
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`发送消息失败: HTTP ${response.status} - ${errorText}`);
+      return false;
+    }
+
     const data = await response.json() as FeishuResponse<unknown>;
 
     const { code, msg } = data;
@@ -341,6 +348,12 @@ export class FeishuApi {
       },
       body: finalBody,
     });
+
+    // 检查响应状态
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`上传图片失败: HTTP ${response.status} - ${errorText}`);
+    }
 
     const data = await response.json() as FeishuResponse<ImageUploadResponse>;
 
