@@ -465,6 +465,15 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
 
   // 测试发送图片到飞书
   const handleTestImage = async () => {
+    // 检查配置是否有效
+    if (!config || !feishuApi.hasValidConfig()) {
+      message.warning("请先配置飞书应用信息");
+      return;
+    }
+
+    // 初始化 feishuApi（确保配置已加载）
+    feishuApi.init(config);
+
     setTestImageLoading(true);
     try {
       // 使用 1x1 像素的透明 PNG 图片
