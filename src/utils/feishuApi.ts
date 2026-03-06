@@ -299,26 +299,31 @@ export class FeishuApi {
   async uploadImage(imageBuffer: Uint8Array, imageType: string): Promise<string> {
     const token = await this.getTenantAccessToken();
 
-    // 使用 Tauri HTTP 插件的 multipart 上传
-    const boundary = `----WebKitFormBoundary${Date.now()}`;
+    // 生成符合 RFC 2046 规范的 boundary
+    const boundary = `----WebKitFormBoundary${Math.random().toString(36).substr(2, 16)}`;
 
     // 构建 multipart/form-data 请求体
-    let body = '';
+    // 格式: --boundary\r\nContent-Disposition: form-data; name="image"; filename="image.png"\r\nContent-Type: image/png\r\n\r\n[binary data]\r\n--boundary\r\nContent-Disposition: form-data; name="image_type"\r\n\r\nmessage\r\n--boundary--\r\n
 
-    // image 字段
-    body += `--${boundary}\r\n`;
-    body += `Content-Disposition: form-data; name="image"; filename="image.png"\r\n`;
-    body += `Content-Type: ${imageType}\r\n\r\n`;
-    // 注意：二进制数据需要特殊处理
-    const binaryHeader = body;
-    let binaryFooter = `\r\n--${boundary}\r\n`;
-    binaryFooter += `Content-Disposition: form-data; name="image_type"\r\n\r\n`;
-    binaryFooter += `message\r\n`;
-    binaryFooter += `--${boundary}--\r\n`;
+    const headerLines: string[] = [
+      `--${boundary}`,
+      `Content-Disposition: form-data; name="image"; filename="image.png"`,
+      `Content-Type: ${imageType}`,
+      '',
+    ];
 
-    // 将二进制数据转换为 Uint8Array
-    const headerBytes = new TextEncoder().encode(binaryHeader);
-    const footerBytes = new TextEncoder().encode(binaryFooter);
+    const footerLines: string[] = [
+      `--${boundary}`,
+      `Content-Disposition: form-data; name="image_type"`,
+      '',
+      `message`,
+      `--${boundary}--`,
+      '',
+    ];
+
+    // 转换为 Uint8Array
+    const headerBytes = new TextEncoder().encode(headerLines.join('\r\n'));
+    const footerBytes = new TextEncoder().encode(footerLines.join('\r\n'));
 
     // 合并 header + image + footer
     const totalLength = headerBytes.length + imageBuffer.length + footerBytes.length;
