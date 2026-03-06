@@ -150,23 +150,28 @@ export class FeishuApi {
     const url = `https://open.feishu.cn/open-apis/im/v1/messages`;
     
     // 构建完整请求体
-    // 飞书 API 要求：当 receive_id_type=chat_id 时，使用 chat_id 字段
-    const requestBodyObj: Record<string, any> = {
+    // 飞书 API 要求：
+    // 1. 设置 receive_id_type 参数（区分 chat_id 或 open_id）
+    // 2. 根据类型选择对应的字段（chat_id 或 open_id）
+    // 不要同时设置所有字段
+    
+    let requestBodyObj: Record<string, any> = {
       msg_type: msgType,
       content: messageContent,
     };
     
     if (this.config.feishuChatId.startsWith("oc_")) {
-      // 群聊 ID 使用 chat_id 字段
+      // 群聊 ID：使用 chat_id 字段
       requestBodyObj["receive_id_type"] = "chat_id";
       requestBodyObj["chat_id"] = this.config.feishuChatId;
     } else {
-      // open_id 使用 open_id 字段
+      // 用户 ID：使用 open_id 字段
       requestBodyObj["receive_id_type"] = "open_id";
       requestBodyObj["open_id"] = this.config.feishuChatId;
     }
     
     const requestBody = JSON.stringify(requestBodyObj);
+    console.log("[sendMessage] 请求体:", requestBody);
 
     const response = await tauriFetch(url, {
       method: "POST",
