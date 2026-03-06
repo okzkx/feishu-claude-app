@@ -413,3 +413,43 @@ const requestBody = JSON.stringify(requestBodyObj);
   \"content\": \"{\\\"image_key\\\":\\\"img_xxx\\\"}\"
 }
 \`\`\`
+
+---
+
+## 第八次修复：移除 receive_id_type，使用简单请求结构
+
+**提交**: 533fcf1
+
+**问题**: `field validation failed` (code 99992402)
+
+**根因**: 飞书 API 不需要 `receive_id_type` 字段在请求体中
+- `receive_id_type` 仅在 URL 查询参数中使用
+- 请求体中直接使用 `chat_id` 或 `open_id` 即可
+
+**解决方案**:
+- 移除请求体中的 `receive_id_type` 字段
+- 根据 ID 类型直接使用 `chat_id` 或 `open_id`
+- 参考 `web-feishu-api` 技能文档的正确格式
+
+**最终请求格式**:
+\`\`\`json
+{
+  \"chat_id\": \"oc_xxx\",
+  \"msg_type\": \"image\",
+  \"content\": \"{\\\"image_key\\\":\\\"img_xxx\\\"}\"
+}
+\`\`\`
+
+**关键代码**:
+\`\`\`typescript
+const requestBodyObj: Record<string, any> = {
+  msg_type: msgType,
+  content: messageContent,
+};
+
+if (this.config.feishuChatId.startsWith(\"oc_\")) {
+  requestBodyObj[\"chat_id\"] = this.config.feishuChatId;
+} else {
+  requestBodyObj[\"open_id\"] = this.config.feishuChatId;
+}
+\`\`\`
