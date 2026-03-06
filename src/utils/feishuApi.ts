@@ -144,14 +144,19 @@ export class FeishuApi {
 
     console.log("[sendMessage] 发送消息:", { msgType, messageContent });
 
-    // 直接构建请求体为 JSON 字符串
+
+
+    // 使用 Tauri fetch 直接发送，绕过 axios 的序列化
+    const url = `https://open.feishu.cn/open-apis/im/v1/messages`;
+    
+    // 构建完整请求体
     const requestBody = JSON.stringify({
+      receive_id_type: "chat_id",
+      receive_id: this.config.feishuChatId,
       msg_type: msgType,
       content: messageContent,
     });
 
-    // 使用 Tauri fetch 直接发送，绕过 axios 的序列化
-    const url = `https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id&receive_id=${this.config.feishuChatId}`;
     const response = await tauriFetch(url, {
       method: "POST",
       headers: {
