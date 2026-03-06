@@ -388,3 +388,28 @@ const requestBody = JSON.stringify(requestBodyObj);
   \"content\": \"{\\\"image_key\\\":\\\"img_xxx\\\"}\"
 }
 \`\`\`
+
+---
+
+## 第七次修复：简化请求体结构，避免字段冲突
+
+**提交**: ec1e3e6
+
+**问题**: `field validation failed`
+
+**根因**: 同时设置 `receive_id_type` 和 `chat_id`（或 `open_id`）导致字段冲突
+
+**解决方案**:
+- 只设置 `receive_id_type` 参数（用于区分类型）
+- 根据类型选择对应的字段（`chat_id` 或 `open_id`）
+- 不要同时设置两个字段
+
+**最终请求格式**:
+\`\`\`json
+{
+  \"receive_id_type\": \"chat_id\",
+  \"chat_id\": \"oc_xxx\",
+  \"msg_type\": \"image\",
+  \"content\": \"{\\\"image_key\\\":\\\"img_xxx\\\"}\"
+}
+\`\`\`
