@@ -339,3 +339,52 @@ const response = await tauriFetch(url, {
   \"content\": \"{\\\"image_key\\\":\\\"img_xxx\\\"}\"
 }
 \`\`\`
+
+---
+
+## 第六次修复：根据 receive_id_type 使用正确的字段名
+
+**提交**: c7d2bbb
+
+**问题**: `field validation failed`
+
+**根因**: 飞书 API 对群聊 ID 和 open_id 有特殊字段处理
+- 当 `receive_id_type=chat_id` 时，请求体应该使用 `chat_id` 字段
+- 当 `receive_id_type=open_id` 时，请求体应该使用 `open_id` 字段
+- 统一使用 `receive_id` 字段是错误的
+
+**解决方案**:
+- 根据 ID 前缀判断使用哪个字段
+- `oc_` 开头：群聊 ID，使用 `chat_id` 字段
+- 其他：用户 ID，使用 `open_id` 字段
+- 同时设置 `receive_id_type` 用于区分
+
+**代码示例**:
+\`\`\`typescript
+const requestBodyObj: Record<string, any> = {
+  msg_type: msgType,
+  content: messageContent,
+};
+
+if (this.config.feishuChatId.startsWith("oc_")) {
+  // 群聊 ID
+  requestBodyObj["receive_id_type"] = "chat_id";
+  requestBodyObj["chat_id"] = this.config.feishuChatId;
+} else {
+  // 用户 ID
+  requestBodyObj["receive_id_type"] = "open_id";
+  requestBodyObj["open_id"] = this.config.feishuChatId;
+}
+
+const requestBody = JSON.stringify(requestBodyObj);
+\`\`\`
+
+**最终请求格式**:
+\`\`\`json
+{
+  \"receive_id_type\": \"chat_id\",
+  \"chat_id\": \"oc_xxx\",
+  \"msg_type\": \"image\",
+  \"content\": \"{\\\"image_key\\\":\\\"img_xxx\\\"}\"
+}
+\`\`\`
