@@ -1,6 +1,6 @@
 # Feishu Claude App - 项目记忆体
 
-> 最后更新: 2026-02-23
+> 最后更新: 2026-03-06
 
 ## 项目概述
 
@@ -21,8 +21,12 @@
 5. **连续对话（永久记忆）**
 6. **记忆清除功能**（按钮 + `/clear` 指令）
 7. **管理员指令系统**（/clear, /cd）
-8. **E2E 自动化测试**
-9. **NSIS 安装包发布**
+8. **图片发送功能**
+   - 支持上传图片到飞书服务器
+   - 发送图片消息到群聊
+   - 1x1 像素测试图片
+9. **E2E 自动化测试**
+10. **NSIS 安装包发布**
 
 ---
 
@@ -49,8 +53,11 @@ feishu-claude-app/
 │   ├── icons/              # 应用图标
 │   └── tauri.conf.json     # Tauri 配置
 ├── tests/                  # E2E 测试
-│   ├── app.test.ts         # 测试用例
+│   ├── app.test.ts         # 主功能测试
 │   ├── admin-commands.test.ts
+│   ├── image-send.test.ts   # 图片发送测试
+│   ├── image-message.test.ts
+│   └── helpers/visual.ts   # 测试辅助函数
 │   └── helpers/visual.ts   # 测试辅助函数
 ├── docs/                   # 技术文档
 └── .claude/                # Claude Code 配置
@@ -94,6 +101,42 @@ fn get_npm_aware_path() -> String {
 | `/cd <目录>` | 切换工作目录（永久保存） | `/cd C:\projects` |
 
 **实现**: `MainPage.tsx` 的 `handleAdminCommand()` 函数
+
+---
+
+### 2026-03-06: 飞书图片发送测试功能
+
+**问题**: 需要实现图片发送到飞书的完整测试功能
+
+**参考实现**: `F:\okzkx\ClaudeWorkingSpace\feishu_send_image.py` (Python 脚本)
+
+**API 流程**:
+1. 获取 tenant_access_token
+2. 上传图片到 `/im/v1/images` 获取 image_key
+3. 发送图片消息到群聊 (`msg_type: "image"`)
+
+**解决方案**:
+- 修复 `feishuApi.ts` 中的 multipart/form-data 构建
+- 使用标准 boundary 生成方式
+- 完善 `tests/image-send.test.ts` 测试用例
+
+**核心代码** ([`src/utils/feishuApi.ts:299`](src/utils/feishuApi.ts#L299)):
+```typescript
+// 生成符合 RFC 2046 规范的 boundary
+const boundary = `----WebKitFormBoundary${Math.random().toString(36).substr(2, 16)}`;
+
+// 使用数组构建请求行
+const headerLines: string[] = [
+  `--${boundary}`,
+  `Content-Disposition: form-data; name="image"; filename="image.png"`,
+  `Content-Type: ${imageType}`,
+  '',
+];
+```
+
+**测试文件**: [`tests/image-send.test.ts`](tests/image-send.test.ts)
+**测试指南**: [`docs/image-send-test-guide.md`](docs/image-send-test-guide.md)
+**API 文档**: [`docs/image-send-api.md`](docs/image-send-api.md)
 
 ---
 
