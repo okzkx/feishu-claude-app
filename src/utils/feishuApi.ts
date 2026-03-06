@@ -140,26 +140,22 @@ export class FeishuApi {
       messageContent = content;
     }
 
-    console.log("[sendMessage] 发送消息:", { msgType, messageContent });
+    // 构建查询参数 - receive_id 和 receive_id_type 必须在 URL 中
+    const queryParams = new URLSearchParams();
+    if (this.config.feishuChatId.startsWith("oc_")) {
+      queryParams.append("receive_id_type", "chat_id");
+    } else {
+      queryParams.append("receive_id_type", "open_id");
+    }
+    queryParams.append("receive_id", this.config.feishuChatId);
 
-    const url = "https://open.feishu.cn/open-apis/im/v1/messages";
+    const url = `https://open.feishu.cn/open-apis/im/v1/messages?${queryParams.toString()}`;
 
-    // 构建请求体 - 根据 ID 类型使用对应字段
-    let requestBodyObj: Record<string, any> = {
+    // 构建请求体 - 只包含 msg_type 和 content
+    const requestBody = JSON.stringify({
       msg_type: msgType,
       content: messageContent,
-    };
-
-    if (this.config.feishuChatId.startsWith("oc_")) {
-      // 群聊 ID: 使用 chat_id 字段
-      requestBodyObj["chat_id"] = this.config.feishuChatId;
-    } else {
-      // 用户 ID: 使用 open_id 字段
-      requestBodyObj["open_id"] = this.config.feishuChatId;
-    }
-
-    const requestBody = JSON.stringify(requestBodyObj);
-    console.log("[sendMessage] 请求体:", requestBody);
+    });
 
     const response = await tauriFetch(url, {
       method: "POST",
@@ -302,8 +298,6 @@ export class FeishuApi {
   async uploadImage(imageBuffer: Uint8Array, imageType: string): Promise<string> {
     const token = await this.getTenantAccessToken();
 
-    console.log("[uploadImage] 开始上传图片，大小:", imageBuffer.length, "类型:", imageType);
-
     // 使用 Tauri HTTP 插件的 multipart 上传
     const boundary = `----WebKitFormBoundary${Date.now()}`;
 
@@ -343,8 +337,6 @@ export class FeishuApi {
     });
 
     const data = await response.json() as FeishuResponse<ImageUploadResponse>;
-
-    console.log("[uploadImage] 响应:", data);
 
     if (data.code !== 0) {
       throw new Error(`上传图片失败: ${data.msg} (code: ${data.code})`);

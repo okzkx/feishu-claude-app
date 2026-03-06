@@ -48,6 +48,7 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
   const [recentMessages, setRecentMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [isManualRefresh, setIsManualRefresh] = useState(false); // 是否是手动刷新
   const [testCommand, setTestCommand] = useState("");
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; output: string } | null>(null);
@@ -111,10 +112,12 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
         message.warning("请先配置飞书应用信息");
       }
       setRefreshing(false);
+      setIsManualRefresh(false);
       return;
     }
 
     setRefreshing(true);
+    setIsManualRefresh(!isAutoRefresh); // 手动刷新时显示提示
 
     try {
       // 从 ref 获取最新值
@@ -209,6 +212,7 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
       }
     } finally {
       setRefreshing(false);
+      setIsManualRefresh(false);
     }
   }, []); // 依赖数组为空，因为使用 ref 获取最新值
 
@@ -788,8 +792,8 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
             <p>确定要继续吗？</p>
           </Modal>
 
-          {/* 刷新状态提示 */}
-          {refreshing && (
+          {/* 刷新状态提示（仅在手动刷新时显示） */}
+          {isManualRefresh && refreshing && (
             <Alert
               message="正在从飞书服务器获取消息..."
               type="info"

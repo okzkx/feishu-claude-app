@@ -173,9 +173,6 @@ export const createTauriAdapter = (retryConfig?: Partial<RetryConfig>): AxiosAda
   const config: RetryConfig = { ...DEFAULT_RETRY_CONFIG, ...retryConfig };
 
   return async (axiosConfig) => {
-    console.log("TauriAdapter: config.params", axiosConfig.params);
-    console.log("TauriAdapter: config.url", axiosConfig.url);
-
     let url = axiosConfig.url || "";
     if (axiosConfig.baseURL && url.indexOf("http") !== 0) {
       url = buildURL(buildFullPath(axiosConfig.baseURL, axiosConfig.url || ""), axiosConfig.params);
@@ -202,9 +199,6 @@ export const createTauriAdapter = (retryConfig?: Partial<RetryConfig>): AxiosAda
       }
     }
 
-    console.log("TauriAdapter: 最终 URL", url);
-    console.log("TauriAdapter: 请求", method, url);
-
     let lastError: unknown = null;
 
     for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
@@ -224,8 +218,6 @@ export const createTauriAdapter = (retryConfig?: Partial<RetryConfig>): AxiosAda
           headers,
           body
         );
-
-        console.log(`TauriAdapter: 尝试 ${attempt + 1}/${config.maxRetries + 1}, 状态码: ${response.status}`);
 
         if (!response.ok) {
           // 检查是否需要重试
@@ -265,7 +257,6 @@ export const createTauriAdapter = (retryConfig?: Partial<RetryConfig>): AxiosAda
 
         // 请求成功
         if (attempt > 0) {
-          console.log(`TauriAdapter: 重试成功 (第 ${attempt + 1} 次尝试)`);
         }
 
         return {
