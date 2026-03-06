@@ -226,3 +226,46 @@ expect(await successMessage.isExisting()).toBe(true);
 
 - [飞书开放平台 - 发送消息 API](https://open.larkoffice.com/document/server-docs/im-v1/message/create)
 - [飞书开放平台 - 上传图片 API](https://open.larkoffice.com/document/server-docs/im-v1/image/upload)
+
+---
+
+## 第三次修复：axios 自动序列化问题
+
+**提交**: 6bdd3b7
+
+**问题**: axios 自动序列化 data 对象，导致 content 字段被再次包装
+
+**根因**:
+- 传递对象给 axios.post() 会自动序列化为 JSON 字符串
+- 即使 content 本身已经是 JSON 字符串，也会被转义为字符串
+- 飞书 API 收到的格式：`{"msg_type":"image","content":"{\"image_key\":\"xxx\"}"}`
+- 但 axios 会将其进一步处理，导致格式不正确
+
+**解决方案**:
+- 直接构建完整的请求体为 JSON 字符串
+- 传递 JSON 字符串而非对象给 axios.post()
+- 确保 Content-Type 为 application/json
+
+**代码示例**:
+\`\`\`typescript
+// 错误方式 - 传递对象
+const response = await axios.post(url, {
+  msg_type: msgType,
+  content: messageContent,  // 会被再次序列化
+});
+
+// 正确方式 - 传递 JSON 字符串
+const requestBody = JSON.stringify({
+  msg_type: msgType,
+  content: messageContent,
+});
+const response = await axios.post(url, requestBody);
+\`\`\`
+
+**最终请求格式**:
+\`\`\`json
+{
+  "msg_type": "image",
+  "content": "{\"image_key\":\"img_xxx\"}"
+}
+\`\`\`
