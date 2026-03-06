@@ -171,6 +171,10 @@ export class FeishuApi {
   /**
    * 发送消息到群聊
    * 飞书 API 文档: https://open.larkoffice.com/document/server-docs/im-v1/message/create
+   *
+   * 重要: content 字段必须是 JSON 字符串格式
+   * - text 消息: "{\"text\":\"消息内容\"}"
+   * - image 消息: "{\"image_key\":\"xxx\"}"
    */
   async sendMessage(content: string, msgType: string = "text"): Promise<boolean> {
     if (!this.config) {
@@ -179,13 +183,13 @@ export class FeishuApi {
 
     const headers = await this.getHeaders();
 
-    // 构建消息内容
-    let messageContent: any;
+    // 构建消息内容 - 必须是 JSON 字符串格式
+    let messageContent: string;
     if (msgType === "text") {
-      messageContent = { text: content };
+      messageContent = JSON.stringify({ text: content });
     } else if (msgType === "image") {
-      // content 是 JSON 字符串，需要解析
-      messageContent = JSON.parse(content);
+      // 图片消息的 content 应该已经是 JSON 字符串格式
+      messageContent = content;
     } else {
       messageContent = content;
     }

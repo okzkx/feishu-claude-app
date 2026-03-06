@@ -11,7 +11,7 @@ export const config: Options.Testrunner = {
     maxInstances: 1,
     browserName: 'wry',  // Tauri 的 WebView 库名称
     'tauri:options': {
-      application: 'C:\\Users\\71411\\Documents\\GitHub\\feishu-claude-app\\src-tauri\\target\\debug\\feishu-claude-app.exe'
+      application: 'F:\\okzkx\\feishu-claude-app\\src-tauri\\target\\debug\\feishu-claude-app.exe'
     }
   }],
 
