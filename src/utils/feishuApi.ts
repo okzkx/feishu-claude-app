@@ -104,7 +104,6 @@ export class FeishuApi {
 
     return this.tenantToken!;
   }
-
   /**
    * 获取带认证的请求头
    */
@@ -114,6 +113,63 @@ export class FeishuApi {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     };
+  }
+
+  /**
+   * 发送消息到群聊
+   * 飞书 API 文档: https://open.larkoffice.com/document/server-docs/im-v1/message/create
+   *
+   * 重要: 使用 tauriFetch 直接发送，避免 axios 自动序列化
+   * 请求体必须是完整的 JSON 字符串，content 字段本身就是 JSON 字符串
+   * - text 消息: {"msg_type":"text","content":"{\"text\":\"消息内容\"}"}
+   * - image 消息: {"msg_type":"image","content":"{\"image_key\":\"xxx\"}"}
+   */
+  async sendMessage(content: string, msgType: string = "text"): Promise<boolean> {
+    if (!this.config) {
+      throw new Error("飞书 API 未初始化");
+    }
+
+    const token = await this.getTenantAccessToken();
+
+    // 构建消息内容 - 必须是 JSON 字符串格式
+    let messageContent: string;
+    if (msgType === "text") {
+      messageContent = JSON.stringify({ text: content });
+    } else if (msgType === "image") {
+      // 图片消息的 content 应该已经是 JSON 字符串格式
+      messageContent = content;
+    } else {
+      messageContent = content;
+    }
+
+    console.log("[sendMessage] 发送消息:", { msgType, messageContent });
+
+    // 直接构建请求体为 JSON 字符串
+    const requestBody = JSON.stringify({
+      msg_type: msgType,
+      content: messageContent,
+    });
+
+    // 使用 Tauri fetch 直接发送，绕过 axios 的序列化
+    const url = `https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id&receive_id=${this.config.feishuChatId}`;
+    const response = await tauriFetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: requestBody,
+    });
+
+    const data = await response.json() as FeishuResponse<unknown>;
+
+    const { code, msg } = data;
+    if (code !== 0) {
+      console.error(`发送消息失败: code=${code}, msg=${msg}`);
+      return false;
+    }
+
+    return true;
   }
 
   /**
@@ -166,61 +222,6 @@ export class FeishuApi {
       createTime: parseInt(item.create_time) / 1000,
       status: "pending" as const,
     }));
-  }
-
-  /**
-   * 发送消息到群聊
-   * 飞书 API 文档: https://open.larkoffice.com/document/server-docs/im-v1/message/create
-   *
-   * 重要: 请求体必须是完整的 JSON 字符串，content 字段本身就是 JSON 字符串
-   * - text 消息: {"msg_type":"text","content":"{\"text\":\"消息内容\"}"}
-   * - image 消息: {"msg_type":"image","content":"{\"image_key\":\"xxx\"}"}
-   */
-  async sendMessage(content: string, msgType: string = "text"): Promise<boolean> {
-    if (!this.config) {
-      throw new Error("飞书 API 未初始化");
-    }
-
-    const headers = await this.getHeaders();
-
-    // 构建消息内容 - 必须是 JSON 字符串格式
-    let messageContent: string;
-    if (msgType === "text") {
-      messageContent = JSON.stringify({ text: content });
-    } else if (msgType === "image") {
-      // 图片消息的 content 应该已经是 JSON 字符串格式
-      messageContent = content;
-    } else {
-      messageContent = content;
-    }
-
-    console.log("[sendMessage] 发送消息:", { msgType, messageContent });
-
-    // 直接构建请求体为 JSON 字符串，避免 axios 自动序列化导致 content 被再次包装
-    const requestBody = JSON.stringify({
-      msg_type: msgType,
-      content: messageContent,
-    });
-
-    // 飞书发送消息 API 需要将 receive_id_type 和 receive_id 作为查询参数
-    const response = await this.axiosInstance.post<FeishuResponse<unknown>>(
-      `/im/v1/messages?receive_id_type=chat_id&receive_id=${this.config.feishuChatId}`,
-      requestBody,  // 直接传递 JSON 字符串，避免 axios 自动序列化
-      {
-        headers: {
-          ...headers,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    const { code, msg } = response.data;
-    if (code !== 0) {
-      console.error(`发送消息失败: code=${code}, msg=${msg}`);
-      return false;
-    }
-
-    return true;
   }
 
   /**
