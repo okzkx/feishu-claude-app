@@ -172,9 +172,9 @@ export class FeishuApi {
    * 发送消息到群聊
    * 飞书 API 文档: https://open.larkoffice.com/document/server-docs/im-v1/message/create
    *
-   * 重要: content 字段必须是 JSON 字符串格式
-   * - text 消息: "{\"text\":\"消息内容\"}"
-   * - image 消息: "{\"image_key\":\"xxx\"}"
+   * 重要: 请求体必须是完整的 JSON 字符串，content 字段本身就是 JSON 字符串
+   * - text 消息: {"msg_type":"text","content":"{\"text\":\"消息内容\"}"}
+   * - image 消息: {"msg_type":"image","content":"{\"image_key\":\"xxx\"}"}
    */
   async sendMessage(content: string, msgType: string = "text"): Promise<boolean> {
     if (!this.config) {
@@ -196,14 +196,22 @@ export class FeishuApi {
 
     console.log("[sendMessage] 发送消息:", { msgType, messageContent });
 
+    // 直接构建请求体为 JSON 字符串，避免 axios 自动序列化导致 content 被再次包装
+    const requestBody = JSON.stringify({
+      msg_type: msgType,
+      content: messageContent,
+    });
+
     // 飞书发送消息 API 需要将 receive_id_type 和 receive_id 作为查询参数
     const response = await this.axiosInstance.post<FeishuResponse<unknown>>(
       `/im/v1/messages?receive_id_type=chat_id&receive_id=${this.config.feishuChatId}`,
+      requestBody,  // 直接传递 JSON 字符串，避免 axios 自动序列化
       {
-        msg_type: msgType,
-        content: messageContent,
-      },
-      { headers }
+        headers: {
+          ...headers,
+          "Content-Type": "application/json",
+        },
+      }
     );
 
     const { code, msg } = response.data;
