@@ -474,3 +474,45 @@ if (this.config.feishuChatId.startsWith(\"oc_\")) {
 URL: https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id&receive_id=oc_xxx
 Body: { "msg_type": "image", "content": "{\"image_key\":\"img_xxx\"}" }
 
+
+
+---
+
+## 第十次修复：chat_id 放回请求体
+
+**提交**: 27c1e73
+
+**问题**: `invalid receive_id` (code 230001)
+
+**根因**: 根据 `web-feishu-api` 技能文档，`chat_id` 必须在**请求体**中
+
+**解决方案**:
+- 参考 [web-feishu-api 技能文档](C:/Users/zengkaixiang/.claude/skills/web-feishu-api/SKILL.md)
+- 将 `chat_id`/`open_id` 放回请求体
+- 不使用 URL 查询参数
+
+**最终请求格式**:
+\`\`\`
+URL: https://open.feishu.cn/open-apis/im/v1/messages
+Body: { "chat_id": "oc_xxx", "msg_type": "image", "content": "{\\"image_key\\":\\"img_xxx\\"}" }
+\`\`\`
+
+**关键代码**:
+\`\`\`typescript
+const url = "https://open.feishu.cn/open-apis/im/v1/messages";
+
+// 构建请求体 - chat_id/open_id 必须在请求体中
+let requestBodyObj: Record<string, any> = {
+  msg_type: msgType,
+  content: messageContent,
+};
+
+if (this.config.feishuChatId.startsWith("oc_")) {
+  requestBodyObj["chat_id"] = this.config.feishuChatId;
+} else {
+  requestBodyObj["open_id"] = this.config.feishuChatId;
+}
+
+const requestBody = JSON.stringify(requestBodyObj);
+\`\`\`
+
