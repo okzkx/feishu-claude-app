@@ -120,22 +120,24 @@ fn get_npm_aware_path() -> String {
 - 使用标准 boundary 生成方式
 - 完善 `tests/image-send.test.ts` 测试用例
 
-**核心代码** ([`src/utils/feishuApi.ts:299`](src/utils/feishuApi.ts#L299)):
+**核心代码** ([`src/utils/feishuApi.ts:306`](src/utils/feishuApi.ts#L306)):
 ```typescript
 // 生成符合 RFC 2046 规范的 boundary
 const boundary = `----WebKitFormBoundary${Math.random().toString(36).substr(2, 16)}`;
 
-// 使用数组构建请求行
-const headerLines: string[] = [
-  `--${boundary}`,
-  `Content-Disposition: form-data; name="image"; filename="image.png"`,
-  `Content-Type: ${imageType}`,
-  '',
-];
+// 使用单独的 headerPart 确保正确的空行
+const headerPart = `--${boundary}\r\nContent-Disposition: form-data; name="image"; filename="image.png"\r\nContent-Type: ${imageType}\r\n\r\n`;
+
+const footerPart = `\r\n--${boundary}\r\nContent-Disposition: form-data; name="image_type"\r\n\r\nmessage\r\n--${boundary}--\r\n`;
 ```
+
+**已修复问题**:
+1. JSON 解析错误 - 添加响应状态检查
+2. multipart 格式错误 - 修复空行处理 (`\r\n\r\n`)
 
 **测试文件**: [`tests/image-send.test.ts`](tests/image-send.test.ts)
 **测试指南**: [`docs/image-send-test-guide.md`](docs/image-send-test-guide.md)
+**调试指南**: [`docs/image-upload-debug.md`](docs/image-upload-debug.md)
 **API 文档**: [`docs/image-send-api.md`](docs/image-send-api.md)
 
 ---
