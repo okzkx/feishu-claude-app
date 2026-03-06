@@ -314,3 +314,28 @@ const response = await tauriFetch(url, {
   "content": "{\"image_key\":\"img_xxx\"}"
 }
 \`\`\`
+
+---
+
+## 第五次修复：将参数移到请求体
+
+**提交**: 67332f5
+
+**问题**: 错误信息 "invalid receive_id"
+
+**根因**: API 参数可能需要放在请求体中，而不是 URL 查询参数
+
+**解决方案**:
+- 将 `receive_id_type` 和 `receive_id` 移到请求体中
+- 简化 URL，只保留基础端点
+- 所有参数统一放在请求体中
+
+**最终请求格式**:
+\`\`\`json
+{
+  \"receive_id_type\": \"chat_id\",
+  \"receive_id\": \"oc_xxx\",
+  \"msg_type\": \"image\",
+  \"content\": \"{\\\"image_key\\\":\\\"img_xxx\\\"}\"
+}
+\`\`\`
