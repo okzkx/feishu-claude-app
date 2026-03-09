@@ -243,12 +243,12 @@ struct FeishuTokenResponse {
     tenant_access_token: Option<String>,
 }
 
-// 获取飞书 tenant_access_token
-async fn get_tenant_access_token(config: &AppConfig) -> Result<String, String> {
+// 获取飞书 tenant_access_token（辅助函数，避免 async 中的锁问题）
+async fn get_tenant_access_token_helper(app_id: &str, app_secret: &str) -> Result<String, String> {
     let url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal";
     let body = serde_json::json!({
-        "app_id": config.feishu_app_id,
-        "app_secret": config.feishu_app_secret
+        "app_id": app_id,
+        "app_secret": app_secret
     });
 
     let client = reqwest::Client::new();
@@ -279,8 +279,13 @@ async fn get_feishu_image(
     state: tauri::State<'_, AppState>,
     image_key: String,
 ) -> Result<Vec<u8>, String> {
-    let config = state.config.lock().map_err(|e| e.to_string())?;
-    let token = get_tenant_access_token(&config).await?;
+    // 提取需要的数据，避免在 async 中持有锁
+    let (app_id, app_secret) = {
+        let config = state.config.lock().map_err(|e| e.to_string())?;
+        (config.feishu_app_id.clone(), config.feishu_app_secret.clone())
+    };
+
+    let token = get_tenant_access_token_helper(&app_id, &app_secret).await?;
 
     let url = format!(
         "https://open.feishu.cn/open-apis/im/v1/images/{}/read",
