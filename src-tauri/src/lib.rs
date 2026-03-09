@@ -236,6 +236,80 @@ async fn set_working_dir(
     Ok(format!("工作目录已切换到: {}", path))
 }
 
+// 飞书 Token 响应结构
+#[derive(Debug, Deserialize)]
+struct FeishuTokenResponse {
+    code: i32,
+    tenant_access_token: Option<String>,
+}
+
+// 获取飞书 tenant_access_token
+async fn get_tenant_access_token(config: &AppConfig) -> Result<String, String> {
+    let url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal";
+    let body = serde_json::json!({
+        "app_id": config.feishu_app_id,
+        "app_secret": config.feishu_app_secret
+    });
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("请求飞书 API 失败: {}", e))?;
+
+    let token_response: FeishuTokenResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("解析响应失败: {}", e))?;
+
+    if token_response.code != 0 {
+        return Err(format!("获取 token 失败: code={}", token_response.code));
+    }
+
+    token_response
+        .tenant_access_token
+        .ok_or_else(|| "token 字段缺失".to_string())
+}
+
+// 获取飞书图片
+#[tauri::command]
+async fn get_feishu_image(
+    state: tauri::State<'_, AppState>,
+    image_key: String,
+) -> Result<Vec<u8>, String> {
+    let config = state.config.lock().map_err(|e| e.to_string())?;
+    let token = get_tenant_access_token(&config).await?;
+
+    let url = format!(
+        "https://open.feishu.cn/open-apis/im/v1/images/{}/read",
+        image_key
+    );
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .map_err(|e| format!("请求图片失败: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "图片请求失败: HTTP {}",
+            response.status()
+        ));
+    }
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("读取图片失败: {}", e))?;
+
+    Ok(bytes.to_vec())
+}
+
 // 执行 Claude 命令
 #[tauri::command]
 async fn execute_claude(
@@ -322,6 +396,7 @@ pub fn run() {
             mcp_disconnect,
             clear_claude_memory,
             set_working_dir,
+            get_feishu_image,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

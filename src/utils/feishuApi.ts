@@ -222,30 +222,42 @@ export class FeishuApi {
     );
 
     // 转换为统一格式
-    return messageItems.map((item: any) => ({
-      messageId: item.message_id,
-      // 使用消息中的 chat_id，如果没有则使用配置中的 feishuChatId
-      chatId: item.chat_id || this.config!.feishuChatId,
-      senderId: item.sender?.id || "",
-      senderName: item.sender?.sender_type === 'user' ? '用户' :
-                 item.sender?.sender_type === 'app' ? '机器人' : '系统',
-      senderType: item.sender?.sender_type || 'unknown',
-      content: this.parseContent(item.body?.content || ""),
-      msgType: item.msg_type,
-      createTime: parseInt(item.create_time) / 1000,
-      status: "pending" as const,
-    }));
+    return messageItems.map((item: any) => {
+      const parsedContent = this.parseContent(item.body?.content || "", item.msg_type);
+      return {
+        messageId: item.message_id,
+        // 使用消息中的 chat_id，如果没有则使用配置中的 feishuChatId
+        chatId: item.chat_id || this.config!.feishuChatId,
+        senderId: item.sender?.id || "",
+        senderName: item.sender?.sender_type === 'user' ? '用户' :
+                   item.sender?.sender_type === 'app' ? '机器人' : '系统',
+        senderType: item.sender?.sender_type || 'unknown',
+        content: parsedContent.text,
+        msgType: item.msg_type,
+        imageKey: parsedContent.imageKey,
+        createTime: parseInt(item.create_time) / 1000,
+        status: "pending" as const,
+      };
+    });
   }
 
   /**
    * 解析消息内容
+   * @param content 消息内容字符串
+   * @param msgType 消息类型
+   * @returns 解析后的内容对象，包含 text 和可能的 imageKey
    */
-  private parseContent(content: string): string {
+  private parseContent(content: string, msgType: string): { text: string; imageKey?: string } {
     try {
       const parsed = JSON.parse(content);
-      return parsed.text || content;
+      // 图片消息: 提取 image_key
+      if (msgType === 'image') {
+        return { text: '[图片]', imageKey: parsed.image_key };
+      }
+      // 文本消息: 提取 text
+      return { text: parsed.text || content };
     } catch {
-      return content;
+      return { text: content };
     }
   }
 
@@ -361,6 +373,16 @@ export class FeishuApi {
    */
   async sendImageMessage(imageKey: string): Promise<boolean> {
     return this.sendMessage(JSON.stringify({ image_key: imageKey }), "image");
+  }
+
+  /**
+   * 生成图片 URL
+   * 注意: 此 URL 需要通过后端代理请求，因为需要 Authorization 头
+   * @param imageKey 图片的 image_key
+   * @returns 图片下载 URL
+   */
+  getImageUrl(imageKey: string): string {
+    return `https://open.feishu.cn/open-apis/im/v1/images/${imageKey}/read`;
   }
 }
 

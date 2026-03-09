@@ -2,7 +2,7 @@
 
 > 项目: feishu-claude-app
 > 创建时间: 2026-03-05
-> 最后更新: 2026-03-05
+> 最后更新: 2026-03-09
 
 ---
 
@@ -113,3 +113,63 @@
 **文件**: src/utils/feishuApi.ts:280-312
 **问题**: Tauri fetch 不支持标准的 FormData 对象
 **修复**: 手动构建 multipart/form-data 请求体
+
+---
+
+## 图片显示功能任务 (2026-03-09)
+
+### T11: 扩展 Message 类型定义
+**状态**: ⏸️ 待开始
+**优先级**: 高
+**描述**:
+- 文件: `src/types/index.ts`
+- 添加 `imageKey?: string` 字段
+
+### T12: 添加图片 URL 生成方法
+**状态**: ⏸️ 待开始
+**优先级**: 高
+**描述**:
+- 文件: `src/utils/feishuApi.ts`
+- 添加 `getImageUrl(imageKey: string)` 方法
+
+### T13: 修改消息解析逻辑
+**状态**: ⏸️ 待开始
+**优先级**: 高
+**描述**:
+- 文件: `src/utils/feishuApi.ts`
+- 修改 `parseContent` 方法提取 image_key
+
+### T14: 修改消息过滤逻辑
+**状态**: ⏸️ 待开始
+**优先级**: 高
+**描述**:
+- 文件: `src/components/MainPage.tsx`
+- 移除 `msgType === 'text'` 过滤
+
+### T15: 实现图片显示组件
+**状态**: ⏸️ 待开始
+**优先级**: 高
+**描述**:
+- 文件: `src/components/MessageItem.tsx` (新建)
+- 支持文本和图片消息显示
+
+### T16: 更新 MainPage 使用新组件
+**状态**: ⏸️ 待开始
+**优先级**: 高
+**描述**:
+- 文件: `src/components/MainPage.tsx`
+- 导入并使用 MessageItem
+
+### T17: 添加后端图片代理
+**状态**: ⏸️ 待开始
+**优先级**: 高
+**描述**:
+- 文件: `src-tauri/src/lib.rs`
+- 添加 `get_image` command
+
+### T18: 测试图片显示功能
+**状态**: ⏸️ 待开始
+**优先级**: 中
+**描述**:
+- 发送图片消息验证
+- 点击放大验证

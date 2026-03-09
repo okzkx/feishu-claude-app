@@ -34,6 +34,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import type { AppConfig, Message, TaskResult } from "../types";
 import { feishuApi } from "../utils/feishuApi";
+import { MessageItem } from "./MessageItem";
 
 const { Text, Paragraph } = Typography;
 
@@ -58,6 +59,7 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
   const [mcpConnecting, setMcpConnecting] = useState(false); // MCP 连接中状态
   const [clearingMemory, setClearingMemory] = useState(false); // 清除记忆中状态
   const [currentWorkingDir, setCurrentWorkingDir] = useState<string>(''); // 当前工作目录
+  const [imageBlobUrls, setImageBlobUrls] = useState<Record<string, string>>({}); // 图片 Blob URL 映射
 
   // 管理员指令列表
   const adminCommands = [
@@ -131,7 +133,7 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
       // 首次拉取时记录最新消息 ID 并显示消息列表
       if (isFirstPoll && msgs.length > 0) {
         lastMessageIdRef.current = msgs[0].messageId;
-        setRecentMessages(msgs.filter(m => m.msgType === 'text').slice(0, 10));
+        setRecentMessages(msgs.slice(0, 10));  // 显示所有类型的消息（文本和图片）
         isFirstPollRef.current = false;
         return;
       }
@@ -507,6 +509,19 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     }
   };
 
+  // 加载飞书图片
+  const handleLoadImage = async (imageKey: string) => {
+    try {
+      const bytes = await invoke<number[]>("get_feishu_image", { imageKey });
+      const blob = new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' });
+      const url = URL.createObjectURL(blob);
+      setImageBlobUrls(prev => ({ ...prev, [imageKey]: url }));
+    } catch (error) {
+      console.error("加载图片失败:", error);
+      message.error(`加载图片失败: ${error}`);
+    }
+  };
+
   // 清除记忆功能
   const [clearMemoryModalOpen, setClearMemoryModalOpen] = useState(false);
 
@@ -569,24 +584,6 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     processing: "处理中",
     completed: "已完成",
     failed: "失败",
-  };
-
-  const formatTime = (timestamp: number) => {
-    const date = new Date(timestamp * 1000);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const minutes = Math.floor(diff / 60000);
-    const hours = Math.floor(diff / 3600000);
-
-    if (minutes < 1) return '刚刚';
-    if (minutes < 60) return `${minutes}分钟前`;
-    if (hours < 24) return `${hours}小时前`;
-    return date.toLocaleString('zh-CN', {
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
   };
 
   const PollingStatusIndicator = () => (
@@ -930,27 +927,12 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
                   <Text type="secondary">暂无消息</Text>
                 ) : (
                   recentMessages.map((item) => (
-                    <div
+                    <MessageItem
                       key={item.messageId}
-                      style={{
-                        padding: '12px 0',
-                        borderBottom: '1px solid #f0f0f0',
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                        <Space>
-                          <Tag color={item.senderType === 'user' ? 'green' : 'blue'}>
-                            {item.senderName || '未知'}
-                          </Tag>
-                        </Space>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          {formatTime(item.createTime)}
-                        </Text>
-                      </div>
-                      <div style={{ paddingLeft: 8 }}>
-                        <Text>{item.content || '(无内容)'}</Text>
-                      </div>
-                    </div>
+                      message={item}
+                      imageBlobUrls={imageBlobUrls}
+                      onLoadImage={handleLoadImage}
+                    />
                   ))
                 )}
               </div>

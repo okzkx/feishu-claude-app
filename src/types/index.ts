@@ -21,6 +21,7 @@ export interface Message {
   senderType?: string;
   content: string;
   msgType: string;
+  imageKey?: string;  // 图片消息的 image_key
   createTime: number;
   status: "pending" | "processing" | "completed" | "failed";
 }
