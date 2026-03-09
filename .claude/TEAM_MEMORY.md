@@ -72,7 +72,29 @@ Authorization: Bearer {tenant_access_token}
 ## 技术积累
 
 ### 已解决
-*无*
+
+#### 2026-03-09: 图片消息显示功能
+
+**需求**: 在消息列表中显示图片而非 image_key
+
+**解决方案**:
+1. 扩展 Message 类型添加 `imageKey` 字段
+2. 修改 `parseContent` 方法提取 `image_key`
+3. 创建 `MessageItem` 组件支持图片显示
+4. 添加后端 `get_feishu_image` 代理认证请求
+5. 使用 Blob URL 显示图片避免跨域问题
+
+**技术要点**:
+- 飞书图片 URL 需要 Authorization 认证，必须后端代理
+- Blob URL 可将二进制数据转换为可显示的 URL
+- 按需加载避免性能问题
+
+**提交**: 2dbc114
+
+**产出文档**:
+- `.claude/memory/image-display-feature.md` - 功能实现文档
+- `.claude/plans/image-display-plan.md` - 开发计划
+- `src/components/MessageItem.tsx` - 图片显示组件
 
 ### 遇到的坑点
 *开发中记录...*
