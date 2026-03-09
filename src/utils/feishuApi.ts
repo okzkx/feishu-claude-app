@@ -142,23 +142,23 @@ export class FeishuApi {
 
     const url = "https://open.feishu.cn/open-apis/im/v1/messages";
 
-    // 构建请求体 - chat_id/open_id 必须在请求体中
-    let requestBodyObj: Record<string, any> = {
+    // 确定接收者 ID 类型
+    const receiveIdType = this.config.feishuChatId.startsWith("oc_") ? "chat_id" : "open_id";
+
+    // 构建 URL 参数
+    const urlWithParams = new URL(url);
+    urlWithParams.searchParams.append("receive_id_type", receiveIdType);
+
+    // 构建请求体 - 使用 receive_id 字段（符合新 API 规范）
+    const requestBodyObj: Record<string, any> = {
+      receive_id: this.config.feishuChatId,
       msg_type: msgType,
       content: messageContent,
     };
 
-    if (this.config.feishuChatId.startsWith("oc_")) {
-      // 群聊 ID: 使用 chat_id 字段
-      requestBodyObj["chat_id"] = this.config.feishuChatId;
-    } else {
-      // 用户 ID: 使用 open_id 字段
-      requestBodyObj["open_id"] = this.config.feishuChatId;
-    }
-
     const requestBody = JSON.stringify(requestBodyObj);
 
-    const response = await tauriFetch(url, {
+    const response = await tauriFetch(urlWithParams.toString(), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
