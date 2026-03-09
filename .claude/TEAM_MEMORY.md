@@ -89,12 +89,16 @@ Authorization: Bearer {tenant_access_token}
 - Blob URL 可将二进制数据转换为可显示的 URL
 - 按需加载避免性能问题
 
-**提交**: 2dbc114
+**提交**: 2dbc114, 8a4b19b, c315bf0
 
 **产出文档**:
 - `.claude/memory/image-display-feature.md` - 功能实现文档
 - `.claude/plans/image-display-plan.md` - 开发计划
+- `.claude/reports/image-display-work-report.md` - 工作报告
+- `.claude/skills/feishu-image-display.md` - 技术提炼
+- `.claude/agents/image-display-specialist.md` - Agent 配置
 - `src/components/MessageItem.tsx` - 图片显示组件
+- `tests/image-display.test.ts` - E2E 测试
 
 ### 遇到的坑点
 *开发中记录...*
