@@ -1,5 +1,5 @@
-import React from 'react';
-import { Tag, Space, Image, Typography } from 'antd';
+import React, { useEffect } from 'react';
+import { Tag, Space, Image, Typography, Spin } from 'antd';
 import { ClockCircleOutlined } from '@ant-design/icons';
 import { Message } from '../types';
 
@@ -8,12 +8,14 @@ const { Text } = Typography;
 interface MessageItemProps {
   message: Message;
   imageBlobUrls?: Record<string, string>;  // imageKey -> Blob URL 的映射
+  loadingImages?: Set<string>;  // 正在加载的图片集合
   onLoadImage?: (imageKey: string) => void;  // 加载图片的回调
 }
 
 export const MessageItem: React.FC<MessageItemProps> = ({
   message,
   imageBlobUrls,
+  loadingImages,
   onLoadImage,
 }) => {
   // 格式化时间
@@ -21,6 +23,22 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     const date = new Date(timestamp * 1000);
     return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
   };
+
+  // 自动加载图片
+  useEffect(() => {
+    if (
+      message.msgType === 'image' &&
+      message.imageKey &&
+      !imageBlobUrls?.[message.imageKey] &&
+      !loadingImages?.has(message.imageKey) &&
+      onLoadImage
+    ) {
+      onLoadImage(message.imageKey);
+    }
+  }, [message.msgType, message.imageKey, imageBlobUrls, loadingImages, onLoadImage]);
+
+  const isLoading = message.imageKey && loadingImages?.has(message.imageKey);
+  const hasImage = message.imageKey && imageBlobUrls?.[message.imageKey];
 
   return (
     <div style={{ padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
@@ -41,7 +59,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
       <div style={{ paddingLeft: 8 }}>
         {message.msgType === 'image' && message.imageKey ? (
           // 图片消息
-          imageBlobUrls?.[message.imageKey] ? (
+          hasImage ? (
             <Image
               src={imageBlobUrls[message.imageKey]}
               alt="图片消息"
@@ -51,8 +69,11 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 mask: '点击查看大图',
               }}
             />
+          ) : isLoading ? (
+            // 正在加载
+            <Spin size="small" />
           ) : (
-            // 图片未加载，显示加载按钮
+            // 加载失败，显示重试按钮
             <button
               onClick={() => onLoadImage?.(message.imageKey!)}
               style={{
@@ -64,7 +85,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 cursor: 'pointer',
               }}
             >
-              加载图片
+              重试加载图片
             </button>
           )
         ) : (

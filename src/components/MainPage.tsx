@@ -60,6 +60,7 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
   const [clearingMemory, setClearingMemory] = useState(false); // 清除记忆中状态
   const [currentWorkingDir, setCurrentWorkingDir] = useState<string>(''); // 当前工作目录
   const [imageBlobUrls, setImageBlobUrls] = useState<Record<string, string>>({}); // 图片 Blob URL 映射
+  const [loadingImages, setLoadingImages] = useState<Set<string>>(new Set()); // 正在加载的图片集合
 
   // 管理员指令列表
   const adminCommands = [
@@ -511,14 +512,38 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
 
   // 加载飞书图片
   const handleLoadImage = async (imageKey: string) => {
+    // 设置加载状态
+    setLoadingImages(prev => {
+      const newSet = new Set(prev);
+      newSet.add(imageKey);
+      return newSet;
+    });
+
     try {
       const bytes = await invoke<number[]>("get_feishu_image", { imageKey });
       const blob = new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' });
       const url = URL.createObjectURL(blob);
-      setImageBlobUrls(prev => ({ ...prev, [imageKey]: url }));
+
+      setImageBlobUrls(prev => ({
+        ...prev,
+        [imageKey]: url,
+      }));
+
+      // 清除加载状态
+      setLoadingImages(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(imageKey);
+        return newSet;
+      });
     } catch (error) {
       console.error("加载图片失败:", error);
       message.error(`加载图片失败: ${error}`);
+      // 清除加载状态
+      setLoadingImages(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(imageKey);
+        return newSet;
+      });
     }
   };
 
@@ -927,10 +952,11 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
                   <Text type="secondary">暂无消息</Text>
                 ) : (
                   recentMessages.map((item) => (
-                    <MessageItem
+                        <MessageItem
                       key={item.messageId}
                       message={item}
                       imageBlobUrls={imageBlobUrls}
+                      loadingImages={loadingImages}
                       onLoadImage={handleLoadImage}
                     />
                   ))

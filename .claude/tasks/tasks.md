@@ -119,53 +119,60 @@
 ## 图片显示功能任务 (2026-03-09)
 
 ### T11: 扩展 Message 类型定义
-**状态**: ⏸️ 待开始
+**状态**: ✅ 已完成
 **优先级**: 高
 **描述**:
 - 文件: `src/types/index.ts`
 - 添加 `imageKey?: string` 字段
+**结果**: Line 24 已添加 imageKey 字段
 
 ### T12: 添加图片 URL 生成方法
-**状态**: ⏸️ 待开始
+**状态**: ✅ 已完成
 **优先级**: 高
 **描述**:
 - 文件: `src/utils/feishuApi.ts`
 - 添加 `getImageUrl(imageKey: string)` 方法
+**结果**: 方法已实现
 
 ### T13: 修改消息解析逻辑
-**状态**: ⏸️ 待开始
+**状态**: ✅ 已完成
 **优先级**: 高
 **描述**:
 - 文件: `src/utils/feishuApi.ts`
 - 修改 `parseContent` 方法提取 image_key
+**结果**: 图片消息正确解析为 { text: '[图片]', imageKey }
 
 ### T14: 修改消息过滤逻辑
-**状态**: ⏸️ 待开始
+**状态**: ✅ 已完成
 **优先级**: 高
 **描述**:
 - 文件: `src/components/MainPage.tsx`
 - 移除 `msgType === 'text'` 过滤
+**结果**: 图片消息现在显示在消息列表
 
 ### T15: 实现图片显示组件
-**状态**: ⏸️ 待开始
+**状态**: ✅ 已完成
 **优先级**: 高
 **描述**:
 - 文件: `src/components/MessageItem.tsx` (新建)
 - 支持文本和图片消息显示
+**结果**: 组件已创建，支持加载图片和预览
 
 ### T16: 更新 MainPage 使用新组件
-**状态**: ⏸️ 待开始
+**状态**: ✅ 已完成
 **优先级**: 高
 **描述**:
 - 文件: `src/components/MainPage.tsx`
 - 导入并使用 MessageItem
+**结果**: Line 37 导入，Line 930-935 使用
 
 ### T17: 添加后端图片代理
-**状态**: ⏸️ 待开始
+**状态**: ✅ 已完成
 **优先级**: 高
 **描述**:
 - 文件: `src-tauri/src/lib.rs`
-- 添加 `get_image` command
+- 添加 `get_feishu_image` command
+**结果**: Line 278-314 实现，Line 404 注册
 
 ### T18: 测试图片显示功能
 **状态**: ✅ 已完成
@@ -185,3 +192,17 @@
 - 验证加载图片按钮
 - 验证后端 command
 **结果**: 测试文件已创建
+
+### T20: 图片显示功能验证 (2026-03-09)
+**状态**: ✅ 已完成
+**优先级**: 高
+**团队**: image-display-verification
+**描述**:
+- 代码实现完整性验证
+- TypeScript/Rust 编译验证
+- 应用构建验证
+- E2E 测试环境检查
+**结果**:
+- 代码层面 100% 通过
+- E2E 测试待 WebDriver 环境
+- 验证报告: `.claude/reports/image-display-verification-report.md`
