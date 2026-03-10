@@ -520,7 +520,14 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
     });
 
     try {
-      const bytes = await invoke<number[]>("get_feishu_image", { imageKey });
+      // 正确处理新的返回格式
+      const result = await invoke<Record<string, any>>("get_feishu_image", { imageKey });
+
+      if (!result.success || !result.data) {
+        throw new Error(result.error || "获取图片失败");
+      }
+
+      const bytes = result.data;
       const blob = new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' });
       const url = URL.createObjectURL(blob);
 
@@ -537,7 +544,7 @@ const MainPage: React.FC<MainPageProps> = ({ config, onSettings }) => {
       });
     } catch (error) {
       console.error("加载图片失败:", error);
-      message.error(`加载图片失败: ${error}`);
+      message.error(`加载图片失败: ${error instanceof Error ? error.message : String(error)}`);
       // 清除加载状态
       setLoadingImages(prev => {
         const newSet = new Set(prev);

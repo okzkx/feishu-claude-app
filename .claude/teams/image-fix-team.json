@@ -1,0 +1,28 @@
+{
+  "name": "image-fix-team",
+  "description": "飞书应用图片加载问题修复专业团队",
+  "persistent": true,
+  "members": [
+    {
+      "name": "frontend-lead",
+      "agentType": "frontend-react-specialist",
+      "role": "前端负责人"
+    },
+    {
+      "name": "backend-lead",
+      "agentType": "desktop-tauri-specialist",
+      "role": "后端负责人"
+    },
+    {
+      "name": "qa-lead",
+      "agentType": "feishu-claude-tester",
+      "role": "测试负责人"
+    },
+    {
+      "name": "doc-lead",
+      "agentType": "docs-organizer",
+      "role": "文档负责人"
+    }
+  ],
+  "tasks": []
+}

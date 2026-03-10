@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "WebSearch",
-      "Bash(npm run tauri dev)"
+      "Bash(npm run tauri dev)",
+      "Bash(netstat -ano)",
+      "Bash(findstr :1421)",
+      "Bash(taskkill /PID 92028 /F)"
     ]
   }
 }

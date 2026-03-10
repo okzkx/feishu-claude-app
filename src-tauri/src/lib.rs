@@ -278,7 +278,7 @@ async fn get_tenant_access_token_helper(app_id: &str, app_secret: &str) -> Resul
 async fn get_feishu_image(
     state: tauri::State<'_, AppState>,
     image_key: String,
-) -> Result<Vec<u8>, String> {
+) -> Result<std::collections::HashMap<String, serde_json::Value>, String> {
     // 提取需要的数据，避免在 async 中持有锁
     let (app_id, app_secret) = {
         let config = state.config.lock().map_err(|e| e.to_string())?;
@@ -301,9 +301,12 @@ async fn get_feishu_image(
         .map_err(|e| format!("请求图片失败: {}", e))?;
 
     if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
         return Err(format!(
-            "图片请求失败: HTTP {}",
-            response.status()
+            "图片请求失败: HTTP {} - {}",
+            status,
+            error_text
         ));
     }
 
@@ -312,7 +315,12 @@ async fn get_feishu_image(
         .await
         .map_err(|e| format!("读取图片失败: {}", e))?;
 
-    Ok(bytes.to_vec())
+    // 返回成功响应
+    let mut result = std::collections::HashMap::new();
+    result.insert("success".to_string(), serde_json::json!(true));
+    result.insert("data".to_string(), serde_json::json!(bytes.to_vec()));
+
+    Ok(result)
 }
 
 // 执行 Claude 命令
