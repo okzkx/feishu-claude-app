@@ -206,3 +206,122 @@
 - 代码层面 100% 通过
 - E2E 测试待 WebDriver 环境
 - 验证报告: `.claude/reports/image-display-verification-report.md`
+
+---
+
+## Zustand 全局状态管理任务 (2026-03-26)
+
+### T21: 安装 Zustand 依赖
+**状态**: ✅ 已完成
+**优先级**: 高
+**描述**: `npm install zustand`
+**结果**: v4.5.x 已安装
+
+### T22: 创建 configStore.ts
+**状态**: ✅ 已完成
+**优先级**: 高
+**描述**: 配置状态管理 Store
+- 飞书配置 (appId, appSecret, chatId)
+- MCP 配置 (enabled, workingDir)
+- UI 配置 (theme, windowEffects, autostart)
+**结果**: `src/stores/configStore.ts` 已创建，支持持久化
+
+### T23: 创建 pollingStore.ts
+**状态**: ✅ 已完成
+**优先级**: 高
+**描述**: 轮询状态管理 Store
+- isRunning, lastPollTime, pollInterval
+- isRefreshing, isManualRefresh, backendStatus
+**结果**: `src/stores/pollingStore.ts` 已创建
+
+### T24: 创建 messageStore.ts
+**状态**: ✅ 已完成
+**优先级**: 高
+**描述**: 消息状态管理 Store
+- messages, recentMessages, processedIds
+- imageBlobUrls, loadingImages
+- lastMessageId, isFirstPoll
+**结果**: `src/stores/messageStore.ts` 已创建
+
+### T25: 创建 mcpStore.ts
+**状态**: ✅ 已完成
+**优先级**: 高
+**描述**: MCP 状态管理 Store
+- status, hasNotifiedDisconnect
+- lastResult, workingDir, errorMessage
+**结果**: `src/stores/mcpStore.ts` 已创建
+
+### T26: 创建 themeStore.ts
+**状态**: ✅ 已完成
+**优先级**: 高
+**描述**: 主题状态管理 Store
+- theme, effectiveTheme, isFollowingSystem
+- 支持持久化到 localStorage
+- 兼容旧代码的 themeStore 导出
+**结果**: `src/stores/themeStore.ts` 已创建
+
+### T27: 创建 stores/index.ts 统一导出
+**状态**: ✅ 已完成
+**优先级**: 高
+**描述**: 集中导出所有 Store 和选择器 hooks
+**结果**: `src/stores/index.ts` 已创建
+
+### T28: TypeScript 编译验证
+**状态**: ✅ 已完成
+**优先级**: 高
+**描述**: 验证所有 Store 类型定义正确
+**结果**: `npx tsc --noEmit` 通过
+
+---
+
+## 主题系统实施任务 (2026-03-26)
+
+### T29: 创建 ThemeProvider 组件
+**状态**: ✅ 已完成
+**优先级**: 高
+**描述**:
+- 文件: `src/providers/ThemeProvider.tsx`
+- 功能: 读取 themeStore，监听系统主题变化，计算 effectiveTheme
+- 注入 CSS 变量到 body，配置 Ant Design ConfigProvider
+**结果**: 组件已创建，支持 light/dark/system 三种模式
+
+### T30: 创建 CSS 变量文件
+**状态**: ✅ 已完成
+**优先级**: 高
+**描述**:
+- 文件: `src/styles/variables.css` - 基础 CSS 变量
+- 文件: `src/styles/themes/light.css` - 亮色主题变量
+- 文件: `src/styles/themes/dark.css` - 暗色主题变量
+**结果**: CSS 变量已定义，支持 `data-theme` 属性切换
+
+### T31: 更新 App.tsx 集成 ThemeProvider
+**状态**: ✅ 已完成
+**优先级**: 高
+**描述**:
+- 移除原有的 ConfigProvider，使用 ThemeProvider 包裹
+- 导入主题 CSS 文件
+**结果**: App.tsx 已更新，主题系统已集成
+
+### T32: 配置页面添加主题切换
+**状态**: ✅ 已完成
+**优先级**: 高
+**描述**:
+- 文件: `src/components/ConfigPage.tsx`
+- 添加主题设置区域 (Divider + Segmented)
+- 使用 `useTheme` hook 管理主题状态
+**结果**: 配置页面已添加主题切换 UI
+
+### T33: 更新 App.css 支持主题切换
+**状态**: ✅ 已完成
+**优先级**: 中
+**描述**:
+- 使用 CSS 变量替代硬编码颜色
+- 添加主题过渡动画
+- 优化滚动条样式
+**结果**: App.css 已更新，支持平滑主题切换
+
+### T34: 创建 providers/index.ts 导出
+**状态**: ✅ 已完成
+**优先级**: 中
+**描述**: 导出 ThemeProvider 和 useTheme
+**结果**: `src/providers/index.ts` 已创建

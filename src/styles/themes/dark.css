@@ -1,0 +1,44 @@
+/**
+ * 暗色主题
+ */
+
+[data-theme="dark"] {
+  /* 主色调 */
+  --color-primary: #177ddc;
+  --color-primary-hover: #3c9ae8;
+  --color-primary-active: #1554ad;
+
+  /* 背景色 */
+  --color-bg-base: #0d0d0d;
+  --color-bg-container: #141414;
+  --color-bg-elevated: #1f1f1f;
+  --color-bg-spotlight: rgba(255, 255, 255, 0.04);
+  --color-bg-mask: rgba(0, 0, 0, 0.65);
+
+  /* 文字色 */
+  --color-text: #ffffff;
+  --color-text-secondary: #a6a6a6;
+  --color-text-tertiary: #737373;
+  --color-text-quaternary: #595959;
+  --color-text-inverse: #1f1f1f;
+
+  /* 边框色 */
+  --color-border: #424242;
+  --color-border-secondary: #303030;
+
+  /* 状态色 */
+  --color-success: #49aa19;
+  --color-warning: #d89614;
+  --color-error: #a61d24;
+  --color-info: #177ddc;
+
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.15), 0 1px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px 0 rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 6px 16px 0 rgba(0, 0, 0, 0.25), 0 3px 6px -4px rgba(0, 0, 0, 0.3), 0 9px 28px 8px rgba(0, 0, 0, 0.2);
+
+  /* 滚动条 */
+  --scrollbar-track-bg: #1f1f1f;
+  --scrollbar-thumb-bg: #4a4a4a;
+  --scrollbar-thumb-hover-bg: #5a5a5a;
+}

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::time::{interval, Duration};
 
 mod mcp;
@@ -20,6 +20,10 @@ pub struct AppConfig {
     pub poll_interval: u64,
     #[serde(default)]
     pub mcp: McpConfig,
+    #[serde(default)]
+    pub is_autostart: bool,
+    #[serde(default)]
+    pub enable_window_effects: bool,
 }
 
 impl Default for AppConfig {
@@ -32,6 +36,8 @@ impl Default for AppConfig {
             cmd_prefix: "claude:".to_string(),
             poll_interval: 2,
             mcp: McpConfig::default(),
+            is_autostart: false,
+            enable_window_effects: true,
         }
     }
 }
@@ -388,12 +394,41 @@ async fn execute_claude(
     }
 }
 
+// 退出应用
+#[tauri::command]
+fn exit_app(app_handle: AppHandle) {
+    app_handle.exit(0);
+}
+
+// 显示主窗口
+#[tauri::command]
+fn show_main_window(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        window.show().map_err(|e| e.to_string())?;
+        window.unminimize().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // 当第二个实例启动时，聚焦已有窗口
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--minimized"]),
+        ))
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             get_config,
@@ -410,7 +445,94 @@ pub fn run() {
             clear_claude_memory,
             set_working_dir,
             get_feishu_image,
+            exit_app,
+            show_main_window,
         ])
+        .setup(|app| {
+            let window = app.get_webview_window("main").unwrap();
+
+            // 根据启动参数控制窗口显示
+            let args: Vec<String> = std::env::args().collect();
+            if !args.contains(&"--minimized".to_string()) {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+
+            // Windows 平台应用毛玻璃效果
+            #[cfg(target_os = "windows")]
+            {
+                use window_vibrancy::{apply_blur, apply_mica};
+                if let Err(_) = apply_mica(&window, None) {
+                    let _ = apply_blur(&window, Some((0, 0, 0, 0)));
+                }
+            }
+
+            // 创建托盘菜单
+            use tauri::menu::{Menu, MenuItem};
+            use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+
+            let quit_i = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+            let show_i = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+            let start_polling_i = MenuItem::with_id(app, "start_polling", "启动轮询", true, None::<&str>)?;
+            let stop_polling_i = MenuItem::with_id(app, "stop_polling", "停止轮询", true, None::<&str>)?;
+
+            let menu = Menu::with_items(app, &[&start_polling_i, &stop_polling_i, &show_i, &quit_i])?;
+
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .tooltip("飞书 Claude 消息轮询")
+                .menu(&menu)
+                .on_menu_event(|app: &tauri::AppHandle, event| {
+                    match event.id.as_ref() {
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        "show" => {
+                            if let Some(win) = app.get_webview_window("main") {
+                                let _ = win.show();
+                                let _ = win.set_focus();
+                            }
+                        }
+                        "start_polling" => {
+                            let state = app.state::<AppState>();
+                            state.is_running.store(true, Ordering::SeqCst);
+                            let _ = app.emit("polling-status", "started");
+                            let _ = app.emit("tray-start-polling", ());
+                        }
+                        "stop_polling" => {
+                            let state = app.state::<AppState>();
+                            state.is_running.store(false, Ordering::SeqCst);
+                            let _ = app.emit("polling-status", "stopped");
+                            let _ = app.emit("tray-stop-polling", ());
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    // 左键单击显示窗口
+                    if let TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        ..
+                    } = event
+                    {
+                        let win = tray.app_handle().get_webview_window("main").unwrap();
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                    }
+                })
+                .build(app)?;
+
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            // 关闭到托盘行为
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

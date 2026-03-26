@@ -1,0 +1,110 @@
+/* TitleBar 组件样式 */
+.titlebar-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  background: var(--titlebar-bg);
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  z-index: 1000;
+  font-size: 13px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  user-select: none;
+}
+
+.titlebar-drag-region {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  cursor: default;
+}
+
+.titlebar-drag-region:hover {
+  cursor: grab;
+}
+
+.titlebar-drag-region:active {
+  cursor: grabbing;
+}
+
+.titlebar-left {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  gap: 8px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.titlebar-logo {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--color-text);
+}
+
+.titlebar-title {
+  font-size: 14px;
+  font-weight: 500;
+  margin-left: 4px;
+}
+
+.titlebar-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+}
+
+.titlebar-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 8px;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+.window-controls {
+  display: flex;
+  gap: 0;
+  height: 100%;
+  align-items: center;
+}
+
+.window-control-button {
+  width: 46px;
+  height: 100%;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.window-control-button:hover {
+  background: var(--color-bg-elevated);
+}
+
+.window-control-button.close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+/* 暗色主题标题栏样式 */
+[data-theme="dark"] .titlebar-container {
+  background: var(--color-bg-elevated);
+  border-bottom: 1px solid var(--color-border);
+}
+
+[data-theme="dark"] .window-control-button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}

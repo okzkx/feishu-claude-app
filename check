@@ -1,0 +1,1 @@
+error TS5025: Unknown compiler option '--noUnused-locals'. Did you mean 'noUnusedLocals'?

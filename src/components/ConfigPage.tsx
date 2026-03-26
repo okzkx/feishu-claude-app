@@ -1,9 +1,11 @@
-import { Form, Input, Button, Card, InputNumber, message, Space, Modal, List, Spin, Switch, Divider, Tag } from "antd";
-import { SettingOutlined, ArrowLeftOutlined, SearchOutlined, CopyOutlined, ApiOutlined, CheckCircleOutlined, CloseCircleOutlined, LoadingOutlined } from "@ant-design/icons";
+import { Form, Input, Button, Card, InputNumber, message, Space, Modal, List, Spin, Switch, Divider, Tag, Segmented } from "antd";
+import { SettingOutlined, ArrowLeftOutlined, SearchOutlined, CopyOutlined, ApiOutlined, CheckCircleOutlined, CloseCircleOutlined, LoadingOutlined, SunOutlined, MoonOutlined, DesktopOutlined } from "@ant-design/icons";
 import { invoke } from "@tauri-apps/api/core";
 import { useState, useEffect } from "react";
 import type { AppConfig } from "../types";
 import { feishuApi } from "../utils/feishuApi";
+import { useTheme } from "../providers";
+import type { ThemeMode } from "../stores";
 
 interface ConfigPageProps {
   onConfigured: (config: AppConfig) => void;
@@ -24,6 +26,9 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
   const [chatListLoading, setChatListLoading] = useState(false);
   const [mcpTesting, setMcpTesting] = useState(false);
   const [mcpConnectionStatus, setMcpConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+
+  // 主题管理
+  const { themeMode, setThemeMode } = useTheme();
 
   useEffect(() => {
     if (initialConfig) {
@@ -270,6 +275,48 @@ const ConfigPage: React.FC<ConfigPageProps> = ({ onConfigured, initialConfig, on
                 </>
               ) : null;
             }}
+          </Form.Item>
+
+          {/* 主题设置 */}
+          <Divider orientation="left">
+            <SunOutlined /> 主题设置
+          </Divider>
+
+          <Form.Item label="界面主题" extra="选择应用的颜色主题">
+            <Segmented
+              value={themeMode}
+              onChange={(value) => setThemeMode(value as ThemeMode)}
+              options={[
+                {
+                  value: 'light',
+                  label: (
+                    <Space>
+                      <SunOutlined />
+                      <span>浅色</span>
+                    </Space>
+                  ),
+                },
+                {
+                  value: 'dark',
+                  label: (
+                    <Space>
+                      <MoonOutlined />
+                      <span>深色</span>
+                    </Space>
+                  ),
+                },
+                {
+                  value: 'system',
+                  label: (
+                    <Space>
+                      <DesktopOutlined />
+                      <span>跟随系统</span>
+                    </Space>
+                  ),
+                },
+              ]}
+              block
+            />
           </Form.Item>
 
           <Form.Item>

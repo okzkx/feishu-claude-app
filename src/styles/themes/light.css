@@ -1,0 +1,33 @@
+/**
+ * 亮色主题
+ * 继承 variables.css 的默认值
+ */
+
+[data-theme="light"] {
+  /* 主色调 */
+  --color-primary: #1677ff;
+  --color-primary-hover: #4096ff;
+  --color-primary-active: #0958d9;
+
+  /* 背景色 */
+  --color-bg-base: #f5f5f5;
+  --color-bg-container: #ffffff;
+  --color-bg-elevated: #ffffff;
+
+  /* 文字色 */
+  --color-text: #1f1f1f;
+  --color-text-secondary: #666666;
+  --color-text-tertiary: #999999;
+
+  /* 边框色 */
+  --color-border: #d9d9d9;
+  --color-border-secondary: #f0f0f0;
+
+  /* 阴影 */
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.1);
+
+  /* 滚动条 */
+  --scrollbar-track-bg: #f1f1f1;
+  --scrollbar-thumb-bg: #c1c1c1;
+  --scrollbar-thumb-hover-bg: #a8a8a8;
+}

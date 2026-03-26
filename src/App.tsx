@@ -1,10 +1,16 @@
 import { useState, useEffect } from "react";
-import { ConfigProvider, theme, message } from "antd";
+import { message } from "antd";
 import { invoke } from "@tauri-apps/api/core";
+import { ThemeProvider } from "./providers";
 import ConfigPage from "./components/ConfigPage";
-import MainPage from "./components/MainPage";
+import MainPage from "./components/MainPage"; // 新组件目录: MainPage/index.tsx
 import { storage, feishuApi } from "./utils";
 import type { AppConfig } from "./types";
+
+// 导入主题 CSS 变量
+import "./styles/variables.css";
+import "./styles/themes/light.css";
+import "./styles/themes/dark.css";
 import "./App.css";
 
 function App() {
@@ -55,14 +61,7 @@ function App() {
   }
 
   return (
-    <ConfigProvider
-      theme={{
-        algorithm: theme.defaultAlgorithm,
-        token: {
-          colorPrimary: "#1677ff",
-        },
-      }}
-    >
+    <ThemeProvider>
       <div className="app">
         {config && !showConfig ? (
           <MainPage config={config} onSettings={handleShowConfig} />
@@ -74,7 +73,7 @@ function App() {
           />
         )}
       </div>
-    </ConfigProvider>
+    </ThemeProvider>
   );
 }
 

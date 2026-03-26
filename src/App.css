@@ -3,6 +3,9 @@ html, body {
   padding: 0;
   height: 100%;
   overflow: auto;
+  background: var(--color-bg-base);
+  color: var(--color-text);
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 #root {
@@ -12,10 +15,11 @@ html, body {
 .app {
   min-height: 100%;
   height: auto;
-  background: #f5f5f5;
+  background: var(--color-bg-base);
   padding: 20px;
   box-sizing: border-box;
   overflow-y: auto;
+  transition: background-color 0.3s ease;
 }
 
 .config-page {
@@ -24,7 +28,8 @@ html, body {
 }
 
 .config-page .ant-card {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-md);
+  transition: box-shadow 0.3s ease;
 }
 
 .main-page {
@@ -33,7 +38,8 @@ html, body {
 }
 
 .main-page .ant-card {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-md);
+  transition: box-shadow 0.3s ease;
 }
 
 .main-page .ant-space-vertical {
@@ -47,22 +53,53 @@ html, body {
   overflow-y: auto;
 }
 
-/* 滚动条样式 */
+/* 滚动条样式 - 使用 CSS 变量 */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: var(--scrollbar-track-bg);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
+  background: var(--scrollbar-thumb-bg);
   border-radius: 4px;
+  transition: background-color 0.3s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a8a8a8;
+  background: var(--scrollbar-thumb-hover-bg);
+}
+
+/* 主题切换动画 */
+* {
+  transition-property: background-color, border-color, color;
+  transition-duration: 0.2s;
+  transition-timing-function: ease-out;
+}
+
+/* 排除特定元素不需要过渡动画 */
+input,
+textarea,
+.ant-input,
+.ant-input-password,
+.ant-select-selector {
+  transition-property: background-color, border-color, color, box-shadow;
+}
+
+/* Segmented 组件在暗色主题下的优化 */
+[data-theme="dark"] .ant-segmented {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+[data-theme="dark"] .ant-segmented-thumb {
+  background: var(--color-bg-elevated);
+}
+
+/* Card 在暗色主题下的优化 */
+[data-theme="dark"] .ant-card {
+  border-color: var(--color-border);
 }
